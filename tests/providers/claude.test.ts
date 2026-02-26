@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import type { ProviderConfig } from '../../src/loader/types.js'
 import type { StreamChunk } from '../../src/providers/types.js'
 
@@ -137,13 +137,21 @@ describe('Claude Provider', () => {
 
   // 1. APIキーなし→err
   describe('createClaudeProvider', () => {
-    it('apiKey も authToken もない場合はエラーを返す', () => {
-      const config: ProviderConfig = {}
-      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
-      expect(result).toStrictEqual({
-        ok: false,
-        error: 'Claude provider requires an API key or auth token',
-      })
+    it('apiKey も authToken も環境変数もない場合はエラーを返す', () => {
+      const saved = { ...process.env }
+      delete process.env['ANTHROPIC_API_KEY']
+      delete process.env['ANTHROPIC_AUTH_TOKEN']
+      try {
+        const config: ProviderConfig = {}
+        const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+        expect(result).toStrictEqual({
+          ok: false,
+          error:
+            'Claude provider requires an API key or auth token. Set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN environment variable, or configure in config.json',
+        })
+      } finally {
+        process.env = saved
+      }
     })
 
     // 2. 正常作成→ok(LLMProvider)
@@ -165,6 +173,55 @@ describe('Claude Provider', () => {
         expect(result.data).toHaveProperty('complete')
         expect(result.data).toHaveProperty('stream')
       }
+    })
+  })
+
+  describe('環境変数フォールバック', () => {
+    const originalEnv = process.env
+
+    beforeEach(() => {
+      process.env = { ...originalEnv }
+      delete process.env['ANTHROPIC_API_KEY']
+      delete process.env['ANTHROPIC_AUTH_TOKEN']
+    })
+
+    afterAll(() => {
+      process.env = originalEnv
+    })
+
+    it('ANTHROPIC_AUTH_TOKEN 環境変数のみでプロバイダーを作成できる', () => {
+      process.env['ANTHROPIC_AUTH_TOKEN'] = 'env-oauth-token'
+      const config: ProviderConfig = {}
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data).toHaveProperty('complete')
+        expect(result.data).toHaveProperty('stream')
+      }
+    })
+
+    it('ANTHROPIC_API_KEY 環境変数のみでプロバイダーを作成できる', () => {
+      process.env['ANTHROPIC_API_KEY'] = 'env-api-key'
+      const config: ProviderConfig = {}
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data).toHaveProperty('complete')
+        expect(result.data).toHaveProperty('stream')
+      }
+    })
+
+    it('config の値が環境変数より優先される', () => {
+      process.env['ANTHROPIC_API_KEY'] = 'env-api-key'
+      const config: ProviderConfig = { apiKey: 'config-api-key' }
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+    })
+
+    it('config も環境変数も未設定の場合はエラーを返す', () => {
+      const config: ProviderConfig = {}
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(false)
     })
   })
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import type { ChatCompletion, ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { ProviderConfig } from '../../src/loader/types.js'
 import type { StreamChunk } from '../../src/providers/types.js'
@@ -91,12 +91,20 @@ describe('OpenAI Provider', () => {
   // 1. APIキーなし→err
   describe('createOpenAIProvider', () => {
     it('APIキーが設定されていない場合、err を返す', () => {
-      const config: ProviderConfig = {}
-      const result = createOpenAIProvider(config, 'gpt-4o')
-      expect(result).toStrictEqual({
-        ok: false,
-        error: 'OpenAI provider requires an API key',
-      })
+      const savedEnv = process.env['OPENAI_API_KEY']
+      try {
+        delete process.env['OPENAI_API_KEY']
+        const config: ProviderConfig = {}
+        const result = createOpenAIProvider(config, 'gpt-4o')
+        expect(result.ok).toBe(false)
+        if (!result.ok) {
+          expect(result.error).toContain('OpenAI provider requires an API key')
+        }
+      } finally {
+        if (savedEnv !== undefined) {
+          process.env['OPENAI_API_KEY'] = savedEnv
+        }
+      }
     })
 
     // 2. 正常作成→ok(LLMProvider)
@@ -107,6 +115,44 @@ describe('OpenAI Provider', () => {
       if (result.ok) {
         expect(result.data).toHaveProperty('complete')
         expect(result.data).toHaveProperty('stream')
+      }
+    })
+  })
+
+  describe('環境変数フォールバック', () => {
+    const originalEnv = process.env
+    beforeEach(() => {
+      process.env = { ...originalEnv }
+      delete process.env['OPENAI_API_KEY']
+    })
+    afterAll(() => {
+      process.env = originalEnv
+    })
+
+    it('OPENAI_API_KEY 環境変数のみでプロバイダーを作成できる', () => {
+      process.env['OPENAI_API_KEY'] = 'env-api-key'
+      const config: ProviderConfig = {}
+      const result = createOpenAIProvider(config, 'gpt-4o')
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data).toHaveProperty('complete')
+        expect(result.data).toHaveProperty('stream')
+      }
+    })
+
+    it('config の値が環境変数より優先される', () => {
+      process.env['OPENAI_API_KEY'] = 'env-api-key'
+      const config: ProviderConfig = { apiKey: 'config-api-key' }
+      const result = createOpenAIProvider(config, 'gpt-4o')
+      expect(result.ok).toBe(true)
+    })
+
+    it('config も環境変数も未設定の場合はエラーを返す', () => {
+      const config: ProviderConfig = {}
+      const result = createOpenAIProvider(config, 'gpt-4o')
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error).toContain('OpenAI provider requires an API key')
       }
     })
   })

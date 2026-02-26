@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import type { ProviderConfig } from '../../src/loader/types.js'
 import type { StreamChunk } from '../../src/providers/types.js'
 
@@ -116,12 +116,21 @@ describe('Gemini Provider', () => {
   // 1. APIキーなし→err
   describe('createGeminiProvider', () => {
     it('APIキーが設定されていない場合、err を返す', () => {
-      const config: ProviderConfig = {}
-      const result = createGeminiProvider(config, 'gemini-pro')
-      expect(result).toStrictEqual({
-        ok: false,
-        error: 'Gemini provider requires an API key',
-      })
+      const savedEnv = process.env['GEMINI_API_KEY']
+      try {
+        delete process.env['GEMINI_API_KEY']
+        const config: ProviderConfig = {}
+        const result = createGeminiProvider(config, 'gemini-pro')
+        expect(result).toStrictEqual({
+          ok: false,
+          error:
+            'Gemini provider requires an API key. Set GEMINI_API_KEY environment variable, or configure in config.json',
+        })
+      } finally {
+        if (savedEnv !== undefined) {
+          process.env['GEMINI_API_KEY'] = savedEnv
+        }
+      }
     })
 
     // 2. 正常作成→ok(LLMProvider)
@@ -133,6 +142,45 @@ describe('Gemini Provider', () => {
         expect(result.data).toHaveProperty('complete')
         expect(result.data).toHaveProperty('stream')
       }
+    })
+  })
+
+  describe('環境変数フォールバック', () => {
+    const originalEnv = process.env
+    beforeEach(() => {
+      process.env = { ...originalEnv }
+      delete process.env['GEMINI_API_KEY']
+    })
+    afterAll(() => {
+      process.env = originalEnv
+    })
+
+    it('GEMINI_API_KEY 環境変数のみでプロバイダーを作成できる', () => {
+      process.env['GEMINI_API_KEY'] = 'env-gemini-key'
+      const config: ProviderConfig = {}
+      const result = createGeminiProvider(config, 'gemini-pro')
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data).toHaveProperty('complete')
+        expect(result.data).toHaveProperty('stream')
+      }
+    })
+
+    it('config の値が環境変数より優先される', () => {
+      process.env['GEMINI_API_KEY'] = 'env-gemini-key'
+      const config: ProviderConfig = { apiKey: 'config-api-key' }
+      const result = createGeminiProvider(config, 'gemini-pro')
+      expect(result.ok).toBe(true)
+    })
+
+    it('config も環境変数も未設定の場合はエラーを返す', () => {
+      const config: ProviderConfig = {}
+      const result = createGeminiProvider(config, 'gemini-pro')
+      expect(result).toStrictEqual({
+        ok: false,
+        error:
+          'Gemini provider requires an API key. Set GEMINI_API_KEY environment variable, or configure in config.json',
+      })
     })
   })
 
