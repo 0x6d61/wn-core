@@ -116,6 +116,104 @@ API keys can reference environment variables using `${ENV_VAR}` syntax.
 
 **Priority (highest to lowest):** CLI flags > project-local `.wn/` > global `~/.wn/`
 
+## Personas, Skills & Agents
+
+wn-core uses a 3-layer resource model. Resources are loaded from `~/.wn/` (global) and `.wn/` (project-local). Local resources override global ones with the same name.
+
+### Persona (System Prompt)
+
+A persona is a plain Markdown file that defines the system prompt for the LLM.
+
+**Directory:** `personas/`
+
+```
+~/.wn/personas/default.md
+.wn/personas/security-expert.md
+```
+
+**Example** (`personas/default.md`):
+
+```markdown
+You are a helpful assistant.
+Answer concisely and accurately.
+```
+
+No frontmatter required — the entire file content becomes the system prompt. Select a persona by name (filename without `.md`) via `defaultPersona` in config or `--persona` CLI flag.
+
+### Skill (Action Definition)
+
+A skill defines a reusable action with a description, allowed tools, and instructions.
+
+**Directory:** `skills/<skill-name>/SKILL.md`
+
+```
+~/.wn/skills/code-review/SKILL.md
+.wn/skills/recon/SKILL.md
+```
+
+**Example** (`skills/code-review/SKILL.md`):
+
+```markdown
+---
+name: code-review
+description: Review source code for bugs and security issues
+tools: [read, grep, shell]
+---
+
+## Instructions
+
+1. Read the target files using the read tool.
+2. Check for common vulnerabilities (injection, XSS, etc.).
+3. Report findings with severity and remediation advice.
+```
+
+**Frontmatter fields:**
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | No | directory name | Skill identifier |
+| `description` | **Yes** | — | Short description of the skill |
+| `tools` | No | `[]` | List of tools the skill can use |
+
+The body (after `---`) contains the detailed instructions.
+
+### Agent (Sub-Agent)
+
+An agent definition configures a sub-agent with its own persona, skills, provider, and model.
+
+**Directory:** `agents/`
+
+```
+~/.wn/agents/scanner.md
+.wn/agents/code-reviewer.md
+```
+
+**Example** (`agents/scanner.md`):
+
+```markdown
+---
+persona: security-expert
+skills: [recon, port-scan]
+provider: claude
+model: claude-sonnet-4-20250514
+---
+
+A sub-agent specialized in network reconnaissance.
+Runs port scans and service detection, then reports findings.
+```
+
+**Frontmatter fields:**
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `name` | No | filename | Agent identifier |
+| `persona` | No | `""` | Persona name to use as system prompt |
+| `skills` | No | `[]` | List of skills to enable |
+| `provider` | No | `""` | LLM provider override |
+| `model` | No | `""` | Model override |
+
+The body becomes the agent's description.
+
 ## Architecture
 
 ```

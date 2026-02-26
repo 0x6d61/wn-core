@@ -114,6 +114,104 @@ API キーは `${ENV_VAR}` 形式で環境変数を参照できます。
 
 **優先順位（高 → 低）:** CLI フラグ > プロジェクトローカル `.wn/` > グローバル `~/.wn/`
 
+## Persona / Skill / Agent
+
+wn-core は 3 層のリソースモデルを採用しています。リソースは `~/.wn/`（グローバル）と `.wn/`（プロジェクトローカル）から読み込まれ、同名のローカルリソースがグローバルを上書きします。
+
+### Persona（システムプロンプト）
+
+Persona は LLM のシステムプロンプトを定義するプレーンな Markdown ファイルです。
+
+**ディレクトリ:** `personas/`
+
+```
+~/.wn/personas/default.md
+.wn/personas/security-expert.md
+```
+
+**例** (`personas/default.md`):
+
+```markdown
+あなたは親切なアシスタントです。
+簡潔かつ正確に回答してください。
+```
+
+フロントマター不要 — ファイル全体がシステムプロンプトになります。`config.json` の `defaultPersona` または `--persona` CLI フラグでファイル名（`.md` を除いた名前）を指定します。
+
+### Skill（アクション定義）
+
+Skill は再利用可能なアクションを定義します。説明文・使用可能ツール・手順を含みます。
+
+**ディレクトリ:** `skills/<スキル名>/SKILL.md`
+
+```
+~/.wn/skills/code-review/SKILL.md
+.wn/skills/recon/SKILL.md
+```
+
+**例** (`skills/code-review/SKILL.md`):
+
+```markdown
+---
+name: code-review
+description: ソースコードのバグとセキュリティ問題をレビュー
+tools: [read, grep, shell]
+---
+
+## 手順
+
+1. read ツールで対象ファイルを読む
+2. 一般的な脆弱性（インジェクション、XSS 等）をチェック
+3. 深刻度と修正アドバイスを含む報告書を作成
+```
+
+**フロントマターフィールド:**
+
+| フィールド | 必須 | デフォルト | 説明 |
+|-----------|------|-----------|------|
+| `name` | いいえ | ディレクトリ名 | スキル識別子 |
+| `description` | **はい** | — | スキルの短い説明 |
+| `tools` | いいえ | `[]` | 使用可能なツールのリスト |
+
+`---` 以降の本文が詳細な手順になります。
+
+### Agent（サブエージェント）
+
+Agent はサブエージェントを定義します。独自の persona、skill、provider、model を設定できます。
+
+**ディレクトリ:** `agents/`
+
+```
+~/.wn/agents/scanner.md
+.wn/agents/code-reviewer.md
+```
+
+**例** (`agents/scanner.md`):
+
+```markdown
+---
+persona: security-expert
+skills: [recon, port-scan]
+provider: claude
+model: claude-sonnet-4-20250514
+---
+
+ネットワーク偵察に特化したサブエージェント。
+ポートスキャンとサービス検出を実行し、結果を報告します。
+```
+
+**フロントマターフィールド:**
+
+| フィールド | 必須 | デフォルト | 説明 |
+|-----------|------|-----------|------|
+| `name` | いいえ | ファイル名 | エージェント識別子 |
+| `persona` | いいえ | `""` | 使用する persona 名 |
+| `skills` | いいえ | `[]` | 有効にする skill のリスト |
+| `provider` | いいえ | `""` | LLM プロバイダーの上書き |
+| `model` | いいえ | `""` | モデルの上書き |
+
+`---` 以降の本文がエージェントの説明になります。
+
 ## アーキテクチャ
 
 ```
