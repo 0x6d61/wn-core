@@ -16,6 +16,10 @@ import {
   loadAgents,
   AgentLoop,
   createNoopHandler,
+  createClaudeProvider,
+  createOpenAIProvider,
+  createOllamaProvider,
+  createGeminiProvider,
 } from '../src/index.js'
 import type { ShellConfig } from '../src/index.js'
 import type {
@@ -27,6 +31,7 @@ import type {
   TokenUsage,
   LLMResponse,
   LLMProvider,
+  StreamChunk,
   ToolResult,
   ToolDefinition,
   SubAgentStatus,
@@ -156,6 +161,30 @@ describe('wn-core', () => {
     expect(typeof loadPersonas).toBe('function')
     expect(typeof loadSkills).toBe('function')
     expect(typeof loadAgents).toBe('function')
+  })
+
+  it('LLM Provider ファクトリ関数がエクスポートされている', () => {
+    expect(typeof createClaudeProvider).toBe('function')
+    expect(typeof createOpenAIProvider).toBe('function')
+    expect(typeof createOllamaProvider).toBe('function')
+    expect(typeof createGeminiProvider).toBe('function')
+  })
+
+  it('StreamChunk 型がコンパイル時に利用可能（型チェック用）', () => {
+    const delta: StreamChunk = { type: 'delta', content: 'hello' }
+    expect(delta.type).toBe('delta')
+
+    const toolCall: StreamChunk = {
+      type: 'tool_call',
+      toolCall: { id: '1', name: 'test', arguments: {} },
+    }
+    expect(toolCall.type).toBe('tool_call')
+
+    const done: StreamChunk = {
+      type: 'done',
+      usage: { inputTokens: 10, outputTokens: 20 },
+    }
+    expect(done.type).toBe('done')
   })
 
   it('Loader 型がコンパイル時に利用可能（型チェック用）', () => {
