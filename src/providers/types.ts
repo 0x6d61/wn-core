@@ -12,6 +12,9 @@ export type JsonSchema = Record<string, unknown>
 export interface Message {
   readonly role: 'user' | 'assistant' | 'system'
   readonly content: string
+  readonly toolCallId?: string
+  readonly name?: string
+  readonly toolCalls?: readonly ToolCall[]
 }
 
 /** LLM に渡すツール定義 */

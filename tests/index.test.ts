@@ -14,6 +14,8 @@ import {
   loadPersonas,
   loadSkills,
   loadAgents,
+  AgentLoop,
+  createNoopHandler,
 } from '../src/index.js'
 import type { ShellConfig } from '../src/index.js'
 import type {
@@ -31,6 +33,9 @@ import type {
   SubAgentHandle,
   AgentConfig,
   SubAgentRunner,
+  AgentLoopState,
+  AgentLoopHandler,
+  AgentLoopOptions,
   WnConfig,
   ProviderConfig,
   McpConfig,
@@ -106,6 +111,13 @@ describe('wn-core', () => {
     expect(undefined as LLMProvider | undefined).toBeUndefined()
     expect(undefined as ToolDefinition | undefined).toBeUndefined()
     expect(undefined as SubAgentRunner | undefined).toBeUndefined()
+
+    // AgentLoop 関連型
+    const loopState: AgentLoopState = 'idle'
+    expect(loopState).toBe('idle')
+
+    expect(undefined as AgentLoopHandler | undefined).toBeUndefined()
+    expect(undefined as AgentLoopOptions | undefined).toBeUndefined()
   })
 
   it('組み込みツールファクトリがエクスポートされている', () => {
@@ -128,6 +140,14 @@ describe('wn-core', () => {
     // ShellConfig 型が利用可能
     const config: ShellConfig = getShellConfig('linux')
     expect(config.shell).toBe('/bin/sh')
+  })
+
+  it('AgentLoop と createNoopHandler がエクスポートされている', () => {
+    expect(typeof AgentLoop).toBe('function')
+    expect(typeof createNoopHandler).toBe('function')
+
+    const handler = createNoopHandler()
+    expect(typeof handler.onResponse).toBe('function')
   })
 
   it('Loader 関数がエクスポートされている', () => {
