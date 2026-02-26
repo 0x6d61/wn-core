@@ -16,9 +16,11 @@ function isNonNullObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** id フィールドが JSON-RPC 2.0 で有効な型かどうかを判定する */
+/** id フィールドが JSON-RPC 2.0 で有効な型かどうかを判定する（NaN, Infinity は除外） */
 function isValidId(id: unknown): id is string | number {
-  return typeof id === 'string' || typeof id === 'number'
+  if (typeof id === 'string') return true
+  if (typeof id === 'number') return Number.isFinite(id)
+  return false
 }
 
 // ─── 型ガード ───
@@ -76,6 +78,10 @@ export function decodeJsonRpc(line: string): Result<JsonRpcIncoming> {
     parsed = JSON.parse(line) as unknown
   } catch {
     return err('Failed to parse JSON-RPC: invalid JSON')
+  }
+
+  if (Array.isArray(parsed)) {
+    return err('Invalid JSON-RPC message: batch requests are not supported')
   }
 
   if (!isJsonRpcIncoming(parsed)) {

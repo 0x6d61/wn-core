@@ -251,6 +251,48 @@ describe('rpc/server', () => {
       expect(mock.written.length).toBeGreaterThanOrEqual(1)
     })
 
+    it('stop() 後に start() を再呼び出しできる', async () => {
+      const mock = createMockTransport()
+      const handler = vi.fn().mockResolvedValue({ ok: true })
+      const server = createRpcServer({ transport: mock.transport, handler })
+
+      // First start → stop
+      const start1 = server.start()
+      mock.pushLine(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'first' }))
+      await new Promise((r) => setTimeout(r, 10))
+      server.stop()
+      await start1
+
+      // Second start should work (stopped flag reset)
+      const mock2 = createMockTransport()
+      const server2 = createRpcServer({ transport: mock2.transport, handler })
+      const start2 = server2.start()
+      mock2.pushLine(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'second' }))
+      mock2.close()
+      await start2
+
+      expect(handler).toHaveBeenCalledTimes(2)
+    })
+
+    it('notification ハンドラがエラーをスローした場合 log notification を送信する', async () => {
+      const mock = createMockTransport()
+      const handler = vi.fn().mockRejectedValue(new Error('notify fail'))
+      const server = createRpcServer({ transport: mock.transport, handler })
+
+      const startPromise = server.start()
+      mock.pushLine(JSON.stringify({ jsonrpc: '2.0', method: 'broken' }))
+      mock.close()
+      await startPromise
+
+      // Notification error → log notification instead of silently swallowing
+      expect(mock.written.length).toBe(1)
+      const log = parseWritten(mock.written, 0)
+      expect(log).toHaveProperty('method', 'log')
+      const params = (log as { params: { level: string; message: string } }).params
+      expect(params.level).toBe('warn')
+      expect(params.message).toContain('notify fail')
+    })
+
     it('複数 request を順次処理する', async () => {
       const mock = createMockTransport()
       let callCount = 0

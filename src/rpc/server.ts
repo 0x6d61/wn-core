@@ -5,15 +5,9 @@
  * トランスポート抽象、AgentLoopHandler との統合を提供する。
  */
 import readline from 'node:readline'
-import type {
-  RpcTransport,
-  RpcRequestHandler,
-  RpcServer,
-  RpcServerOptions,
-  AgentLoopHandler,
-  AgentLoopState,
-  ToolResult,
-} from './types.js'
+import type { RpcTransport, RpcRequestHandler, RpcServer, RpcServerOptions } from './types.js'
+import type { AgentLoopHandler, AgentLoopState } from '../agent/types.js'
+import type { ToolResult } from '../tools/types.js'
 import { RPC_METHODS } from './types.js'
 import {
   decodeJsonRpc,
@@ -72,9 +66,15 @@ export function createRpcServer(options: RpcServerOptions): RpcServer {
   let stopped = false
   let stopResolve: ((value: IteratorResult<string>) => void) | null = null
 
+  const DONE_RESULT: IteratorResult<string> = {
+    value: undefined as unknown as string,
+    done: true,
+  }
+
   /**
    * transport.input をラップし、stop() が呼ばれたときに
    * 待機中の next() を即座に完了させる AsyncIterable を返す。
+   * return() で内部イテレータのリソースも解放する。
    */
   function createStoppableInput(): AsyncIterable<string> {
     const iterator = transport.input[Symbol.asyncIterator]()
@@ -83,7 +83,7 @@ export function createRpcServer(options: RpcServerOptions): RpcServer {
         return {
           next(): Promise<IteratorResult<string>> {
             if (stopped) {
-              return Promise.resolve({ value: undefined as unknown as string, done: true })
+              return Promise.resolve(DONE_RESULT)
             }
             // Race between the real iterator and a stop signal
             return new Promise<IteratorResult<string>>((resolve) => {
@@ -94,15 +94,21 @@ export function createRpcServer(options: RpcServerOptions): RpcServer {
               })
             })
           },
+          return(): Promise<IteratorResult<string>> {
+            // 内部イテレータのリソースを解放する
+            void iterator.return?.(DONE_RESULT)
+            return Promise.resolve(DONE_RESULT)
+          },
         }
       },
     }
   }
 
   async function start(): Promise<void> {
-    for await (const line of createStoppableInput()) {
-      if (stopped) break
+    // stop() 後の再起動を可能にする
+    stopped = false
 
+    for await (const line of createStoppableInput()) {
       const decoded = decodeJsonRpc(line)
 
       if (!decoded.ok) {
@@ -130,8 +136,10 @@ export function createRpcServer(options: RpcServerOptions): RpcServer {
         // Notification (no id) — dispatch but don't write response
         try {
           await handler(msg.method, msg.params)
-        } catch {
-          // Notifications don't get responses, swallow errors
+        } catch (error: unknown) {
+          // Notification にはレスポンスを返せないが、ログ通知で報告する
+          const message = error instanceof Error ? error.message : String(error)
+          transport.write(encodeNotification(RPC_METHODS.LOG, { level: 'warn', message }))
         }
       }
     }
@@ -146,7 +154,7 @@ export function createRpcServer(options: RpcServerOptions): RpcServer {
     if (stopResolve) {
       const r = stopResolve
       stopResolve = null
-      r({ value: undefined as unknown as string, done: true })
+      r(DONE_RESULT)
     }
   }
 
@@ -169,7 +177,17 @@ export function createStdioTransport(
 
   const asyncInput: AsyncIterable<string> = {
     [Symbol.asyncIterator]() {
-      return rl[Symbol.asyncIterator]()
+      const inner = rl[Symbol.asyncIterator]()
+      return {
+        next(): Promise<IteratorResult<string>> {
+          return inner.next()
+        },
+        return(): Promise<IteratorResult<string>> {
+          // readline インターフェースを閉じてリソースを解放する
+          rl.close()
+          return Promise.resolve({ value: undefined as unknown as string, done: true })
+        },
+      }
     },
   }
 

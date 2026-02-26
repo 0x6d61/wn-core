@@ -5,7 +5,7 @@
  * wn-core 固有の RPC メソッド型、およびサーバーインターフェースを定義する。
  */
 
-import type { AgentLoopHandler, AgentLoopState } from '../agent/types.js'
+import type { AgentLoopState } from '../agent/types.js'
 import type { ToolResult } from '../tools/types.js'
 
 // ─── JSON-RPC 2.0 基本型 ───
@@ -154,7 +154,3 @@ export interface RpcServerOptions {
   readonly transport: RpcTransport
   readonly handler: RpcRequestHandler
 }
-
-// ─── 再エクスポート用の型（AgentLoopHandler との統合で使用） ───
-
-export type { AgentLoopHandler, AgentLoopState, ToolResult }

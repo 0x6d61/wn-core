@@ -62,6 +62,16 @@ describe('rpc/protocol', () => {
       const msg = { jsonrpc: '2.0', id: true, method: 'foo' }
       expect(isJsonRpcRequest(msg)).toBe(false)
     })
+
+    it('id が NaN の場合は false', () => {
+      const msg = { jsonrpc: '2.0', id: NaN, method: 'foo' }
+      expect(isJsonRpcRequest(msg)).toBe(false)
+    })
+
+    it('id が Infinity の場合は false', () => {
+      const msg = { jsonrpc: '2.0', id: Infinity, method: 'foo' }
+      expect(isJsonRpcRequest(msg)).toBe(false)
+    })
   })
 
   // ─── isJsonRpcNotification ───
@@ -163,6 +173,18 @@ describe('rpc/protocol', () => {
       const line = JSON.stringify({ jsonrpc: '2.0', id: 1, result: 'ok' })
       const result = decodeJsonRpc(line)
       expect(result.ok).toBe(false)
+    })
+
+    it('配列（バッチリクエスト）を err で返す', () => {
+      const line = JSON.stringify([
+        { jsonrpc: '2.0', id: 1, method: 'a' },
+        { jsonrpc: '2.0', id: 2, method: 'b' },
+      ])
+      const result = decodeJsonRpc(line)
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error).toContain('batch')
+      }
     })
   })
 
