@@ -28,3 +28,24 @@ export type { ShellConfig } from './tools/shell.js'
 
 // Agent types
 export type { SubAgentStatus, SubAgentHandle, AgentConfig, SubAgentRunner } from './agent/types.js'
+
+// Loader types
+export type {
+  WnConfig,
+  ProviderConfig,
+  McpConfig,
+  McpServerConfig,
+  Persona,
+  Skill,
+  AgentDef,
+  FrontmatterResult,
+  LoaderError,
+  LoaderErrorCode,
+} from './loader/types.js'
+
+// Loader functions
+export { parseFrontmatter } from './loader/frontmatter.js'
+export { loadConfig } from './loader/config-loader.js'
+export { loadPersonas } from './loader/persona-loader.js'
+export { loadSkills } from './loader/skill-loader.js'
+export { loadAgents } from './loader/agent-loader.js'

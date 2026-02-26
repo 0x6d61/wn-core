@@ -9,6 +9,11 @@ import {
   createGrepTool,
   createShellTool,
   getShellConfig,
+  parseFrontmatter,
+  loadConfig,
+  loadPersonas,
+  loadSkills,
+  loadAgents,
 } from '../src/index.js'
 import type { ShellConfig } from '../src/index.js'
 import type {
@@ -26,6 +31,16 @@ import type {
   SubAgentHandle,
   AgentConfig,
   SubAgentRunner,
+  WnConfig,
+  ProviderConfig,
+  McpConfig,
+  McpServerConfig,
+  Persona,
+  Skill,
+  AgentDef,
+  FrontmatterResult,
+  LoaderError,
+  LoaderErrorCode,
 } from '../src/index.js'
 
 describe('wn-core', () => {
@@ -113,5 +128,57 @@ describe('wn-core', () => {
     // ShellConfig 型が利用可能
     const config: ShellConfig = getShellConfig('linux')
     expect(config.shell).toBe('/bin/sh')
+  })
+
+  it('Loader 関数がエクスポートされている', () => {
+    expect(typeof parseFrontmatter).toBe('function')
+    expect(typeof loadConfig).toBe('function')
+    expect(typeof loadPersonas).toBe('function')
+    expect(typeof loadSkills).toBe('function')
+    expect(typeof loadAgents).toBe('function')
+  })
+
+  it('Loader 型がコンパイル時に利用可能（型チェック用）', () => {
+    const wnConfig: WnConfig = {
+      defaultProvider: 'claude',
+      defaultModel: 'claude-sonnet-4-20250514',
+      defaultPersona: 'default',
+      providers: {},
+    }
+    expect(wnConfig.defaultProvider).toBe('claude')
+
+    const providerConfig: ProviderConfig = { apiKey: 'test' }
+    expect(providerConfig.apiKey).toBe('test')
+
+    const mcpServer: McpServerConfig = { name: 's', command: 'c', args: [] }
+    expect(mcpServer.name).toBe('s')
+
+    const mcpConfig: McpConfig = { servers: [mcpServer] }
+    expect(mcpConfig.servers).toHaveLength(1)
+
+    const persona: Persona = { name: 'default', content: 'hello' }
+    expect(persona.name).toBe('default')
+
+    const skill: Skill = { name: 'scan', description: 'scan skill', tools: ['shell'], body: '' }
+    expect(skill.name).toBe('scan')
+
+    const agentDef: AgentDef = {
+      name: 'recon',
+      persona: 'default',
+      skills: ['scan'],
+      provider: 'claude',
+      model: 'sonnet',
+      description: 'recon agent',
+    }
+    expect(agentDef.name).toBe('recon')
+
+    const frontmatter: FrontmatterResult = { attributes: {}, body: '' }
+    expect(frontmatter.body).toBe('')
+
+    const loaderError: LoaderError = { code: 'PARSE_ERROR', message: 'bad' }
+    expect(loaderError.code).toBe('PARSE_ERROR')
+
+    const code: LoaderErrorCode = 'IO_ERROR'
+    expect(code).toBe('IO_ERROR')
   })
 })
