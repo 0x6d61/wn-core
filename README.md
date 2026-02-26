@@ -1,17 +1,19 @@
 # @0x6d61/wn-core
 
-Lightweight AI Agent Core Framework.
+[日本語](README.ja.md)
 
-LLM Provider / Persona / Skill / MCP / Tool を組み合わせて、任意の AI エージェントを構築するための Node.js フレームワーク。
+Lightweight AI Agent Core Framework for Node.js.
+
+Build any AI agent by combining LLM providers, personas, skills, MCP tools, and built-in tools.
 
 ## Features
 
-- **4 LLM Providers** — Claude, OpenAI, Ollama, Gemini を統一インターフェースで利用
-- **Tool System** — read / write / shell / grep + MCP 経由のツールを統合管理
-- **3-Layer Model** — persona（人格） / skill（手順） / agent（サブエージェント）の階層管理
-- **JSON-RPC 2.0** — stdin/stdout で TUI やクライアントと通信。Core と UI は別プロセス
-- **Worker Threads** — サブエージェントの並列実行（CPU ヘビーなタスクもメインをブロックしない）
-- **MCP Support** — Model Context Protocol でツールを動的にロード
+- **4 LLM Providers** — Claude, OpenAI, Ollama, and Gemini behind a unified interface
+- **Tool System** — Built-in tools (read / write / shell / grep) + MCP dynamic tool loading
+- **3-Layer Model** — Persona (system prompt) / Skill (action definition) / Agent (sub-agent) hierarchy
+- **JSON-RPC 2.0** — Core and UI communicate over stdin/stdout as separate processes
+- **Worker Threads** — Parallel sub-agent execution without blocking the main loop
+- **MCP Support** — Dynamically load tools from Model Context Protocol servers
 
 ## Install
 
@@ -19,7 +21,7 @@ LLM Provider / Persona / Skill / MCP / Tool を組み合わせて、任意の AI
 npm install @0x6d61/wn-core
 ```
 
-グローバルインストール（CLI として使う場合）：
+Global install (to use as CLI):
 
 ```bash
 npm install -g @0x6d61/wn-core
@@ -27,20 +29,20 @@ npm install -g @0x6d61/wn-core
 
 ## Quick Start
 
-### CLI（JSON-RPC サーバーとして起動）
+### CLI (JSON-RPC Server)
 
 ```bash
 wn-core serve --provider claude --model claude-sonnet-4-20250514
 ```
 
-TUI やクライアントから stdin/stdout で JSON-RPC 2.0 メッセージを送受信します。
+Listens on stdin/stdout for JSON-RPC 2.0 messages from a TUI or any client.
 
 ```bash
-# テスト: パイプで JSON-RPC メッセージを送信
+# Test: pipe a JSON-RPC message
 echo '{"jsonrpc":"2.0","id":1,"method":"input","params":{"text":"hello"}}' | wn-core serve
 ```
 
-### ライブラリとして使う
+### As a Library
 
 ```typescript
 import {
@@ -54,30 +56,30 @@ import {
   createNoopHandler,
 } from '@0x6d61/wn-core'
 
-// 1. LLM Provider を作成
+// 1. Create an LLM provider
 const providerResult = createClaudeProvider(
   { apiKey: process.env['ANTHROPIC_API_KEY'] },
   'claude-sonnet-4-20250514',
 )
 if (!providerResult.ok) throw new Error(providerResult.error)
 
-// 2. ToolRegistry にビルトインツールを登録
+// 2. Register built-in tools
 const tools = new ToolRegistry()
 tools.register(createReadTool())
 tools.register(createWriteTool())
 tools.register(createShellTool())
 tools.register(createGrepTool())
 
-// 3. AgentLoop を構築
+// 3. Build an AgentLoop
 const loop = new AgentLoop({
   provider: providerResult.data,
   tools,
   handler: createNoopHandler(),
-  systemMessage: 'あなたは親切なアシスタントです。',
+  systemMessage: 'You are a helpful assistant.',
 })
 
-// 4. 1回の対話ターン
-const result = await loop.step('src/index.ts を読んで要約して')
+// 4. Run a single conversation turn
+const result = await loop.step('Read src/index.ts and summarize it')
 if (result.ok) {
   console.log(result.data)
 }
@@ -85,7 +87,7 @@ if (result.ok) {
 
 ## Configuration
 
-設定ファイルは `~/.wn/config.json`（グローバル）と `.wn/config.json`（プロジェクトローカル）の 2 階層。CLI フラグが最優先。
+Configuration is loaded from two levels: `~/.wn/config.json` (global) and `.wn/config.json` (project-local). CLI flags take the highest priority.
 
 ```json
 {
@@ -110,26 +112,28 @@ if (result.ok) {
 }
 ```
 
-API キーは `${ENV_VAR}` 形式で環境変数を参照できます。
+API keys can reference environment variables using `${ENV_VAR}` syntax.
+
+**Priority (highest to lowest):** CLI flags > project-local `.wn/` > global `~/.wn/`
 
 ## Architecture
 
 ```
-wn-tui (別プロセス) <-- JSON-RPC 2.0 --> wn-core
-                                           |
-                                           +-- AgentLoop
-                                           +-- LLMProvider (Claude/OpenAI/Ollama/Gemini)
-                                           +-- Loader (persona/skill/agent)
-                                           +-- Tools (read/write/shell/grep + MCP)
-                                           +-- SubAgentRunner (Worker Threads)
-                                           +-- RPC Server (JSON-RPC 2.0)
+wn-tui (separate process) <-- JSON-RPC 2.0 --> wn-core
+                                                  |
+                                                  +-- AgentLoop
+                                                  +-- LLMProvider (Claude/OpenAI/Ollama/Gemini)
+                                                  +-- Loader (persona/skill/agent)
+                                                  +-- Tools (read/write/shell/grep + MCP)
+                                                  +-- SubAgentRunner (Worker Threads)
+                                                  +-- RPC Server (JSON-RPC 2.0)
 ```
 
-詳細は [docs/architecture.md](docs/architecture.md) を参照。
+See [docs/architecture.md](docs/architecture.md) for details.
 
 ## RPC Protocol
 
-Core と クライアントは JSON-RPC 2.0 over stdin/stdout（NDJSON）で通信します。
+Core and clients communicate via JSON-RPC 2.0 over stdin/stdout (NDJSON format).
 
 ### Core -> Client (Notification)
 
