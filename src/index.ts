@@ -54,6 +54,10 @@ export type {
   LoaderErrorCode,
 } from './loader/types.js'
 
+// MCP
+export type { McpConnection, McpManager } from './mcp/types.js'
+export { createMcpManager } from './mcp/client.js'
+
 // Loader functions
 export { parseFrontmatter } from './loader/frontmatter.js'
 export { loadConfig } from './loader/config-loader.js'

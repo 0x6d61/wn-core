@@ -20,6 +20,7 @@ import {
   createOpenAIProvider,
   createOllamaProvider,
   createGeminiProvider,
+  createMcpManager,
 } from '../src/index.js'
 import type { ShellConfig } from '../src/index.js'
 import type {
@@ -45,6 +46,8 @@ import type {
   ProviderConfig,
   McpConfig,
   McpServerConfig,
+  McpConnection,
+  McpManager,
   Persona,
   Skill,
   AgentDef,
@@ -168,6 +171,14 @@ describe('wn-core', () => {
     expect(typeof createOpenAIProvider).toBe('function')
     expect(typeof createOllamaProvider).toBe('function')
     expect(typeof createGeminiProvider).toBe('function')
+  })
+
+  it('MCP Client がエクスポートされている', () => {
+    expect(typeof createMcpManager).toBe('function')
+
+    // 型がインポート可能であることを検証
+    expect(undefined as McpConnection | undefined).toBeUndefined()
+    expect(undefined as McpManager | undefined).toBeUndefined()
   })
 
   it('StreamChunk 型がコンパイル時に利用可能（型チェック用）', () => {
