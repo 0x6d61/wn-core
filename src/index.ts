@@ -71,6 +71,56 @@ export type {
 export type { McpConnection, McpManager } from './mcp/types.js'
 export { createMcpManager } from './mcp/client.js'
 
+// RPC types
+export type {
+  JsonRpcRequest,
+  JsonRpcNotification,
+  JsonRpcIncoming,
+  JsonRpcSuccessResponse,
+  JsonRpcErrorObject,
+  JsonRpcErrorResponse,
+  RpcResponseParams,
+  RpcToolExecStartParams,
+  RpcToolExecEndParams,
+  RpcToolExecParams,
+  RpcStateChangeParams,
+  RpcLogParams,
+  RpcInputParams,
+  RpcInputResult,
+  RpcAbortParams,
+  RpcAbortResult,
+  RpcConfigUpdateParams,
+  RpcConfigUpdateResult,
+  RpcTransport,
+  RpcRequestHandler,
+  RpcServer,
+  RpcServerOptions,
+} from './rpc/types.js'
+export { JSON_RPC_ERROR_CODES, RPC_METHODS } from './rpc/types.js'
+
+// RPC protocol
+export {
+  isJsonRpcRequest,
+  isJsonRpcNotification,
+  isJsonRpcIncoming,
+  decodeJsonRpc,
+  encodeNotification,
+  encodeSuccessResponse,
+  encodeErrorResponse,
+  encodeParseError,
+  encodeMethodNotFound,
+  encodeInternalError,
+} from './rpc/protocol.js'
+
+// RPC server
+export {
+  MethodNotFoundError,
+  createRpcRequestHandler,
+  createRpcServer,
+  createStdioTransport,
+  createRpcAgentHandler,
+} from './rpc/server.js'
+
 // Loader functions
 export { parseFrontmatter } from './loader/frontmatter.js'
 export { loadConfig } from './loader/config-loader.js'
