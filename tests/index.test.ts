@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { VERSION, ok, err, ToolRegistry } from '../src/index.js'
+import {
+  VERSION,
+  ok,
+  err,
+  ToolRegistry,
+  createReadTool,
+  createWriteTool,
+  createGrepTool,
+  createShellTool,
+  getShellConfig,
+} from '../src/index.js'
+import type { ShellConfig } from '../src/index.js'
 import type {
   Result,
   JsonSchema,
@@ -80,5 +91,27 @@ describe('wn-core', () => {
     expect(undefined as LLMProvider | undefined).toBeUndefined()
     expect(undefined as ToolDefinition | undefined).toBeUndefined()
     expect(undefined as SubAgentRunner | undefined).toBeUndefined()
+  })
+
+  it('組み込みツールファクトリがエクスポートされている', () => {
+    expect(typeof createReadTool).toBe('function')
+    expect(typeof createWriteTool).toBe('function')
+    expect(typeof createGrepTool).toBe('function')
+    expect(typeof createShellTool).toBe('function')
+    expect(typeof getShellConfig).toBe('function')
+
+    // ファクトリが ToolDefinition を返すことを確認
+    const readTool = createReadTool()
+    expect(readTool.name).toBe('read')
+    const writeTool = createWriteTool()
+    expect(writeTool.name).toBe('write')
+    const grepTool = createGrepTool()
+    expect(grepTool.name).toBe('grep')
+    const shellTool = createShellTool()
+    expect(shellTool.name).toBe('shell')
+
+    // ShellConfig 型が利用可能
+    const config: ShellConfig = getShellConfig('linux')
+    expect(config.shell).toBe('/bin/sh')
   })
 })
