@@ -18,7 +18,8 @@
     "lint:fix": "eslint src/ tests/ --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "engines": {
     "node": ">=20"
@@ -27,7 +28,22 @@
     "type": "git",
     "url": "git+https://github.com/0x6d61/wn-core.git"
   },
+  "author": "0x6d61",
   "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "llm",
+    "json-rpc",
+    "claude",
+    "openai",
+    "ollama",
+    "gemini",
+    "mcp"
+  ],
+  "files": [
+    "dist"
+  ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.3.0",
