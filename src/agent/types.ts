@@ -1,5 +1,6 @@
 import type { LLMProvider, TokenUsage } from '../providers/types.js'
 import type { ToolRegistry, ToolResult } from '../tools/types.js'
+import type { McpServerConfig, Persona, ProviderConfig, Skill, WnConfig } from '../loader/types.js'
 
 /**
  * サブエージェントのステータス
@@ -36,6 +37,38 @@ export interface SubAgentRunner {
 
   /** サブエージェントを停止する */
   stop(id: string): Promise<void>
+}
+
+// --- SubAgent Worker 関連 ---
+
+/** Worker に渡すシリアライズ可能なデータ */
+export interface SubAgentWorkerData {
+  readonly id: string
+  readonly task: string
+  readonly systemMessage: string
+  readonly providerName: string
+  readonly providerConfig: ProviderConfig
+  readonly model: string
+  readonly mcpServers: readonly McpServerConfig[]
+}
+
+/** Worker → Main メッセージ */
+export type WorkerMessage =
+  | { readonly type: 'result'; readonly data: string }
+  | { readonly type: 'error'; readonly error: string }
+  | { readonly type: 'log'; readonly level: 'info' | 'warn' | 'error'; readonly message: string }
+
+/** WorkerSubAgentRunner のコンストラクタオプション */
+export interface SubAgentRunnerOptions {
+  readonly config: WnConfig
+  readonly personas: ReadonlyMap<string, Persona>
+  readonly skills: ReadonlyMap<string, Skill>
+  readonly workerUrl?: string | URL
+}
+
+/** Worker 内メッセージ送信インターフェース（テスト用に分離） */
+export interface MessageSender {
+  postMessage(msg: WorkerMessage): void
 }
 
 // --- AgentLoop 関連 ---
