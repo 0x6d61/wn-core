@@ -137,5 +137,5 @@ weness、小さなAI-AgentCore weave（編む）+ harness（馬具・制御）�
 ---
 
 ## Document
-
+planで実装計画を考えた場合は以下に記載
 ドキュメントは `/docs` に記載
