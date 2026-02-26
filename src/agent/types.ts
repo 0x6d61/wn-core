@@ -1,3 +1,6 @@
+import type { LLMProvider, TokenUsage } from '../providers/types.js'
+import type { ToolRegistry, ToolResult } from '../tools/types.js'
+
 /**
  * サブエージェントのステータス
  */
@@ -33,4 +36,29 @@ export interface SubAgentRunner {
 
   /** サブエージェントを停止する */
   stop(id: string): Promise<void>
+}
+
+// --- AgentLoop 関連 ---
+
+/** AgentLoop の状態 */
+export type AgentLoopState = 'idle' | 'waiting_input' | 'thinking' | 'tool_running'
+
+/** AgentLoop イベントハンドラ */
+export interface AgentLoopHandler {
+  readonly onResponse: (content: string) => void | Promise<void>
+  readonly onToolStart: (name: string, args: Record<string, unknown>) => void | Promise<void>
+  readonly onToolEnd: (name: string, result: ToolResult) => void | Promise<void>
+  readonly onStateChange: (state: AgentLoopState) => void | Promise<void>
+  readonly onError: (error: string) => void | Promise<void>
+  readonly onUsage?: (usage: TokenUsage) => void | Promise<void>
+}
+
+/** AgentLoop コンストラクタオプション */
+export interface AgentLoopOptions {
+  readonly provider: LLMProvider
+  readonly tools: ToolRegistry
+  readonly handler: AgentLoopHandler
+  readonly systemMessage?: string
+  readonly maxToolRounds?: number
+  readonly signal?: AbortSignal
 }
