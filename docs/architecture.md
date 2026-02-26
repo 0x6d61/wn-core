@@ -58,8 +58,10 @@ wn-core/
   │   │   └── grep.ts
   │   ├── mcp/                      # MCP クライアント
   │   │   └── client.ts
-  │   └── rpc/                      # RPC Server
-  │       └── server.ts
+  │   └── rpc/                      # RPC Server (JSON-RPC 2.0)
+  │       ├── types.ts              # メッセージ型・メソッド型・インターフェース
+  │       ├── protocol.ts           # encode / decode / 型ガード（純粋関数）
+  │       └── server.ts             # RpcServer・トランスポート・AgentLoop ブリッジ
   ├── tests/                        # src/ とミラー構造
   ├── docs/
   ├── package.json
@@ -466,33 +468,103 @@ class AgentLoop {
 ### 5.7 RPC 通信
 
 Core と TUI は別プロセスで動作し、**JSON-RPC 2.0 over stdin/stdout** で通信する。
+プロトコルは **NDJSON**（newline-delimited JSON）形式で、1 行 = 1 メッセージ。
 
 ```
-wn-tui (フロントエンド)  ←──── JSON-RPC 2.0 ────→  wn-core (バックエンド)
+wn-tui (フロントエンド)  ←──── JSON-RPC 2.0 (NDJSON) ────→  wn-core (バックエンド)
 ```
-
-**Core → TUI（イベント通知）:**
-
-| メソッド | 内容 |
-|---|---|
-| `log` | ログ出力 |
-| `stateChange` | 状態変更（idle, thinking, toolRunning） |
-| `toolExec` | ツール実行通知（名前、引数、結果） |
-| `response` | LLM の応答テキスト |
-
-**TUI → Core（コマンド）:**
-
-| メソッド | 内容 |
-|---|---|
-| `input` | ユーザー入力 |
-| `abort` | 処理中断 |
-| `configUpdate` | 設定変更（persona 切り替えなど） |
 
 **設計方針:**
 
 - TUI が落ちても Core は動き続ける
 - TUI を後からアタッチ可能（再接続）
 - Core は stdin/stdout をリッスンするだけなので、TUI 以外のクライアントも接続可能
+
+#### 3 層構造
+
+| ファイル | 責務 | 依存 |
+|---|---|---|
+| `rpc/types.ts` | メッセージ型・メソッド定数・インターフェース定義 | `agent/types.ts`, `tools/types.ts` |
+| `rpc/protocol.ts` | JSON-RPC 2.0 の encode / decode / 型ガード（純粋関数のみ） | `rpc/types.ts`, `result.ts` |
+| `rpc/server.ts` | RpcServer 本体・トランスポート・AgentLoop ブリッジ | `rpc/protocol.ts`, `rpc/types.ts` |
+
+#### RPC メソッド定義
+
+**Core → TUI（Notification — id なし、レスポンス不要）:**
+
+| メソッド | パラメータ型 | マッピング元 |
+|---|---|---|
+| `response` | `{ content: string }` | `AgentLoopHandler.onResponse` |
+| `toolExec` | `{ event: 'start', name, args }` | `AgentLoopHandler.onToolStart` |
+| `toolExec` | `{ event: 'end', name, result }` | `AgentLoopHandler.onToolEnd` |
+| `stateChange` | `{ state: AgentLoopState }` | `AgentLoopHandler.onStateChange` |
+| `log` | `{ level: 'info'\|'warn'\|'error', message }` | `AgentLoopHandler.onError` |
+
+**TUI → Core（Request — id あり、レスポンスを返す）:**
+
+| メソッド | パラメータ型 | 結果型 |
+|---|---|---|
+| `input` | `{ text: string }` | `{ accepted: boolean }` |
+| `abort` | `{}` | `{ aborted: boolean }` |
+| `configUpdate` | `{ persona?, provider?, model? }` | `{ applied: boolean }` |
+
+#### トランスポート抽象
+
+I/O を抽象化し、テスト時にはメモリ上のキューでモック可能にする。
+
+```typescript
+interface RpcTransport {
+  readonly input: AsyncIterable<string>  // 行単位の入力ストリーム
+  write(line: string): void              // 1 行出力
+}
+```
+
+`createStdioTransport(input, output)` は `readline.createInterface` で入力を行単位に変換し、`output.write(line + '\n')` で出力する。
+
+#### RpcServer API
+
+```typescript
+interface RpcServer {
+  start(): Promise<void>                    // メッセージ受信ループ開始（ストリーム終了まで待機）
+  notify(method: string, params?: unknown): void  // Notification 送信
+  stop(): void                              // 受信ループを中断
+}
+```
+
+`createRpcServer({ transport, handler })` で生成。内部の受信ループ:
+
+1. `transport.input` から 1 行読み取り
+2. `decodeJsonRpc()` で JSON パース + 型検証
+3. Request → `handler(method, params)` → 成功/エラーレスポンスを書き戻し
+4. Notification → `handler(method, params)` → レスポンスなし（エラー時は `log` 通知で報告）
+5. 不正 JSON → Parse Error レスポンス
+
+`stop()` は待機中の `next()` を即座に完了させ、ループを抜ける。`stop()` 後に再度 `start()` 可能。
+
+#### AgentLoop ブリッジ
+
+`createRpcAgentHandler(server)` は `AgentLoopHandler` を返し、AgentLoop のイベントを RPC Notification に変換する。
+
+```typescript
+function createRpcAgentHandler(server: RpcServer): AgentLoopHandler
+// onResponse(content)   → server.notify('response', { content })
+// onToolStart(name, args) → server.notify('toolExec', { event: 'start', name, args })
+// onToolEnd(name, result) → server.notify('toolExec', { event: 'end', name, result })
+// onStateChange(state)  → server.notify('stateChange', { state })
+// onError(error)        → server.notify('log', { level: 'error', message: error })
+```
+
+#### エラーハンドリング
+
+JSON-RPC 2.0 標準エラーコードに準拠:
+
+| コード | 名前 | 発生条件 |
+|---|---|---|
+| -32700 | Parse Error | JSON パース失敗 |
+| -32600 | Invalid Request | JSON-RPC フォーマット不正 |
+| -32601 | Method Not Found | 未登録メソッドの呼び出し |
+| -32602 | Invalid Params | パラメータ不正 |
+| -32603 | Internal Error | ハンドラ内の一般例外 |
 
 ---
 
