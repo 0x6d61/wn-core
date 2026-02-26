@@ -198,11 +198,14 @@ function buildRequest(
  * @returns Result<LLMProvider> - 成功時は LLMProvider、失敗時はエラーメッセージ
  */
 export function createGeminiProvider(config: ProviderConfig, model: string): Result<LLMProvider> {
-  if (!config.apiKey) {
-    return err('Gemini provider requires an API key')
+  const apiKey = config.apiKey ?? process.env['GEMINI_API_KEY']
+  if (!apiKey) {
+    return err(
+      'Gemini provider requires an API key. Set GEMINI_API_KEY environment variable, or configure in config.json',
+    )
   }
 
-  const genAI = new GoogleGenerativeAI(config.apiKey)
+  const genAI = new GoogleGenerativeAI(apiKey)
   const generativeModel = genAI.getGenerativeModel({ model })
 
   const provider: LLMProvider = {

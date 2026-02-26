@@ -161,12 +161,15 @@ interface ToolCallAccumulator {
  * @returns Result<LLMProvider> - 成功時はプロバイダーインスタンス、失敗時はエラー
  */
 export function createOpenAIProvider(config: ProviderConfig, model: string): Result<LLMProvider> {
-  if (!config.apiKey) {
-    return err('OpenAI provider requires an API key')
+  const apiKey = config.apiKey ?? process.env['OPENAI_API_KEY']
+  if (!apiKey) {
+    return err(
+      'OpenAI provider requires an API key. Set OPENAI_API_KEY environment variable, or configure in config.json',
+    )
   }
 
   const client = new OpenAI({
-    apiKey: config.apiKey,
+    apiKey,
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
   })
 

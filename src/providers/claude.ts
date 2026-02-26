@@ -224,13 +224,18 @@ function convertTools(
  * @returns Result<LLMProvider> - 成功時は LLMProvider、失敗時はエラーメッセージ
  */
 export function createClaudeProvider(config: ProviderConfig, model: string): Result<LLMProvider> {
-  if (!config.apiKey && !config.authToken) {
-    return err('Claude provider requires an API key or auth token')
+  const apiKey = config.apiKey ?? process.env['ANTHROPIC_API_KEY']
+  const authToken = config.authToken ?? process.env['ANTHROPIC_AUTH_TOKEN']
+
+  if (!apiKey && !authToken) {
+    return err(
+      'Claude provider requires an API key or auth token. Set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN environment variable, or configure in config.json',
+    )
   }
 
   const client = new Anthropic({
-    apiKey: config.apiKey ?? null,
-    authToken: config.authToken ?? null,
+    ...(apiKey ? { apiKey } : {}),
+    ...(authToken ? { authToken } : {}),
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
   })
 
