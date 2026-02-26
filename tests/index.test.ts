@@ -21,6 +21,9 @@ import {
   createOllamaProvider,
   createGeminiProvider,
   createMcpManager,
+  resolveWorkerData,
+  isWorkerMessage,
+  WorkerSubAgentRunner,
 } from '../src/index.js'
 import type { ShellConfig } from '../src/index.js'
 import type {
@@ -42,6 +45,10 @@ import type {
   AgentLoopState,
   AgentLoopHandler,
   AgentLoopOptions,
+  SubAgentWorkerData,
+  WorkerMessage,
+  SubAgentRunnerOptions,
+  MessageSender,
   WnConfig,
   ProviderConfig,
   McpConfig,
@@ -171,6 +178,18 @@ describe('wn-core', () => {
     expect(typeof createOpenAIProvider).toBe('function')
     expect(typeof createOllamaProvider).toBe('function')
     expect(typeof createGeminiProvider).toBe('function')
+  })
+
+  it('SubAgentRunner 関連がエクスポートされている', () => {
+    expect(typeof resolveWorkerData).toBe('function')
+    expect(typeof isWorkerMessage).toBe('function')
+    expect(typeof WorkerSubAgentRunner).toBe('function')
+
+    // 型がインポート可能であることを検証
+    expect(undefined as SubAgentWorkerData | undefined).toBeUndefined()
+    expect(undefined as WorkerMessage | undefined).toBeUndefined()
+    expect(undefined as SubAgentRunnerOptions | undefined).toBeUndefined()
+    expect(undefined as MessageSender | undefined).toBeUndefined()
   })
 
   it('MCP Client がエクスポートされている', () => {

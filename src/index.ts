@@ -35,10 +35,23 @@ export type { ShellConfig } from './tools/shell.js'
 
 // Agent types
 export type { SubAgentStatus, SubAgentHandle, AgentConfig, SubAgentRunner } from './agent/types.js'
+export type {
+  SubAgentWorkerData,
+  WorkerMessage,
+  SubAgentRunnerOptions,
+  MessageSender,
+} from './agent/types.js'
 export type { AgentLoopState, AgentLoopHandler, AgentLoopOptions } from './agent/types.js'
 
 // AgentLoop
 export { AgentLoop, createNoopHandler } from './agent/agent-loop.js'
+
+// SubAgentRunner
+export {
+  resolveWorkerData,
+  isWorkerMessage,
+  WorkerSubAgentRunner,
+} from './agent/sub-agent-runner.js'
 
 // Loader types
 export type {
