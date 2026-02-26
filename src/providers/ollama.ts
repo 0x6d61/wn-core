@@ -117,6 +117,59 @@ async function* parseNdjson(body: ReadableStream<Uint8Array>): AsyncGenerator {
   }
 }
 
+// ─── メッセージ変換（AgentLoop → Ollama API） ──────────────
+
+/**
+ * Ollama API に送信するメッセージの型
+ *
+ * Ollama は OpenAI 互換のため、ツール結果は role: 'tool'、
+ * assistant のツール呼び出しは tool_calls フィールドで送信する。
+ */
+interface OllamaRequestMessage {
+  readonly role: string
+  readonly content: string
+  readonly tool_calls?: ReadonlyArray<{
+    readonly function: {
+      readonly name: string
+      readonly arguments: string
+    }
+  }>
+}
+
+/**
+ * AgentLoop の Message 配列を Ollama API 形式に変換する
+ *
+ * 3 パターンを処理する:
+ * 1. ツール結果メッセージ (role:'user' + toolCallId) → { role: 'tool', content }
+ * 2. assistant + toolCalls → { role: 'assistant', content, tool_calls }
+ * 3. 通常メッセージ → { role, content }
+ */
+function toOllamaMessages(messages: readonly Message[]): readonly OllamaRequestMessage[] {
+  return messages.map((m): OllamaRequestMessage => {
+    // Case 1: ツール結果メッセージ → role: 'tool'
+    if (m.toolCallId !== undefined) {
+      return { role: 'tool', content: m.content }
+    }
+
+    // Case 2: assistant がツール呼び出しを含む場合
+    if (m.toolCalls !== undefined && m.toolCalls.length > 0) {
+      return {
+        role: m.role,
+        content: m.content,
+        tool_calls: m.toolCalls.map((tc) => ({
+          function: {
+            name: tc.name,
+            arguments: JSON.stringify(tc.arguments),
+          },
+        })),
+      }
+    }
+
+    // Case 3: 通常メッセージ
+    return { role: m.role, content: m.content }
+  })
+}
+
 // ─── ファクトリ関数 ──────────────────────────────────────
 
 /**
@@ -134,7 +187,7 @@ export function createOllamaProvider(config: ProviderConfig, model: string): Res
     ): Promise<Result<LLMResponse>> {
       const requestBody: Record<string, unknown> = {
         model,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: toOllamaMessages(messages),
         stream: false,
       }
 
@@ -181,7 +234,7 @@ export function createOllamaProvider(config: ProviderConfig, model: string): Res
     ): AsyncIterable<StreamChunk> {
       const requestBody: Record<string, unknown> = {
         model,
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: toOllamaMessages(messages),
         stream: true,
       }
 

@@ -293,6 +293,85 @@ describe('OpenAI Provider', () => {
     })
   })
 
+  describe('ツール結果メッセージマッピング', () => {
+    // 13. toolCallId 付きメッセージが role: 'tool' に変換される
+    it('toolCallId 付きメッセージが role: "tool" で API に送信される', async () => {
+      mockCreate.mockResolvedValueOnce(makeChatCompletion('OK'))
+      const config: ProviderConfig = { apiKey: 'sk-test-key' }
+      const result = createOpenAIProvider(config, 'gpt-4o')
+      if (!result.ok) throw new Error('provider creation failed')
+
+      await result.data.complete([
+        { role: 'user', content: 'What is the weather?' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: 'call_abc', name: 'get_weather', arguments: { city: 'Tokyo' } }],
+        },
+        {
+          role: 'user',
+          content: '{"temp": 20}',
+          toolCallId: 'call_abc',
+          name: 'get_weather',
+        },
+      ])
+
+      expect(mockCreate).toHaveBeenCalledOnce()
+      const callArgs = mockCreate.mock.calls[0]?.[0] as Record<string, unknown>
+      const messages = callArgs['messages'] as Array<Record<string, unknown>>
+
+      // ツール結果メッセージが role: 'tool' に変換されていること
+      expect(messages[2]).toStrictEqual({
+        role: 'tool',
+        content: '{"temp": 20}',
+        tool_call_id: 'call_abc',
+      })
+    })
+
+    // 14. toolCalls 付き assistant メッセージが tool_calls 付きで送信される
+    it('toolCalls 付き assistant メッセージが tool_calls 付きで API に送信される', async () => {
+      mockCreate.mockResolvedValueOnce(makeChatCompletion('OK'))
+      const config: ProviderConfig = { apiKey: 'sk-test-key' }
+      const result = createOpenAIProvider(config, 'gpt-4o')
+      if (!result.ok) throw new Error('provider creation failed')
+
+      await result.data.complete([
+        { role: 'user', content: 'What is the weather?' },
+        {
+          role: 'assistant',
+          content: 'Let me check.',
+          toolCalls: [{ id: 'call_abc', name: 'get_weather', arguments: { city: 'Tokyo' } }],
+        },
+        {
+          role: 'user',
+          content: '{"temp": 20}',
+          toolCallId: 'call_abc',
+          name: 'get_weather',
+        },
+      ])
+
+      expect(mockCreate).toHaveBeenCalledOnce()
+      const callArgs = mockCreate.mock.calls[0]?.[0] as Record<string, unknown>
+      const messages = callArgs['messages'] as Array<Record<string, unknown>>
+
+      // assistant メッセージに tool_calls が含まれていること
+      expect(messages[1]).toStrictEqual({
+        role: 'assistant',
+        content: 'Let me check.',
+        tool_calls: [
+          {
+            id: 'call_abc',
+            type: 'function',
+            function: {
+              name: 'get_weather',
+              arguments: '{"city":"Tokyo"}',
+            },
+          },
+        ],
+      })
+    })
+  })
+
   describe('stream()', () => {
     // 9. テキストdelta→StreamChunk.delta
     it('テキスト delta を StreamChunk.delta に変換する', async () => {

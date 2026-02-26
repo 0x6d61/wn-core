@@ -348,6 +348,158 @@ describe('Ollama provider', () => {
     expect(doneChunk.usage).toEqual({ inputTokens: 100, outputTokens: 200 })
   })
 
+  // ─── toOllamaMessages conversion tests ──────────────────
+
+  // 13. ツール結果メッセージ → role: 'tool' に変換
+  it('ツール結果メッセージ（toolCallId付き）→ role: "tool" に変換（complete）', async () => {
+    const mockResponse = {
+      message: { role: 'assistant', content: 'OK' },
+      prompt_eval_count: 5,
+      eval_count: 10,
+    }
+    const mockFetch = makeMockFetch(mockResponse)
+    vi.stubGlobal('fetch', mockFetch)
+
+    const result = createOllamaProvider(BASE_CONFIG, MODEL)
+    if (!result.ok) throw new Error('provider creation failed')
+
+    const messages: Message[] = [
+      { role: 'user', content: 'What is the weather?' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'call-1', name: 'get_weather', arguments: { city: 'Tokyo' } }],
+      },
+      { role: 'user', content: '{"temp": 20}', toolCallId: 'call-1', name: 'get_weather' },
+    ]
+    await result.data.complete(messages)
+
+    const fetchMock = mockFetch as ReturnType<typeof vi.fn>
+    const callArgs = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(callArgs[1].body as string) as {
+      messages: Array<Record<string, unknown>>
+    }
+
+    // ツール結果メッセージは role: 'tool' に変換されること
+    expect(body.messages[2]).toEqual({ role: 'tool', content: '{"temp": 20}' })
+  })
+
+  // 14. assistant + toolCalls → tool_calls 付きで送信
+  it('assistant + toolCalls → tool_calls付きで送信（complete）', async () => {
+    const mockResponse = {
+      message: { role: 'assistant', content: 'OK' },
+      prompt_eval_count: 5,
+      eval_count: 10,
+    }
+    const mockFetch = makeMockFetch(mockResponse)
+    vi.stubGlobal('fetch', mockFetch)
+
+    const result = createOllamaProvider(BASE_CONFIG, MODEL)
+    if (!result.ok) throw new Error('provider creation failed')
+
+    const messages: Message[] = [
+      { role: 'user', content: 'What is the weather?' },
+      {
+        role: 'assistant',
+        content: 'Let me check.',
+        toolCalls: [{ id: 'call-1', name: 'get_weather', arguments: { city: 'Tokyo' } }],
+      },
+      { role: 'user', content: '{"temp": 20}', toolCallId: 'call-1', name: 'get_weather' },
+    ]
+    await result.data.complete(messages)
+
+    const fetchMock = mockFetch as ReturnType<typeof vi.fn>
+    const callArgs = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(callArgs[1].body as string) as {
+      messages: Array<Record<string, unknown>>
+    }
+
+    // assistant メッセージに tool_calls が含まれること
+    expect(body.messages[1]).toEqual({
+      role: 'assistant',
+      content: 'Let me check.',
+      tool_calls: [{ function: { name: 'get_weather', arguments: '{"city":"Tokyo"}' } }],
+    })
+  })
+
+  // 15. 通常メッセージは role + content のみ（変換なし）
+  it('通常メッセージは role + content のみ（変換なし）', async () => {
+    const mockResponse = {
+      message: { role: 'assistant', content: 'OK' },
+      prompt_eval_count: 5,
+      eval_count: 10,
+    }
+    const mockFetch = makeMockFetch(mockResponse)
+    vi.stubGlobal('fetch', mockFetch)
+
+    const result = createOllamaProvider(BASE_CONFIG, MODEL)
+    if (!result.ok) throw new Error('provider creation failed')
+
+    const messages: Message[] = [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: 'Hello!' },
+    ]
+    await result.data.complete(messages)
+
+    const fetchMock = mockFetch as ReturnType<typeof vi.fn>
+    const callArgs = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(callArgs[1].body as string) as {
+      messages: Array<Record<string, unknown>>
+    }
+
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: 'Hello!' },
+    ])
+  })
+
+  // 16. stream でもツール結果メッセージが正しく変換される
+  it('stream でもツール結果メッセージが role: "tool" に変換される', async () => {
+    const chunks = [
+      { message: { content: 'Done' }, done: false },
+      { done: true, prompt_eval_count: 5, eval_count: 10 },
+    ]
+    const mockFetch = makeMockStreamFetch(chunks)
+    vi.stubGlobal('fetch', mockFetch)
+
+    const result = createOllamaProvider(BASE_CONFIG, MODEL)
+    if (!result.ok) throw new Error('provider creation failed')
+    if (!result.data.stream) throw new Error('stream not implemented')
+
+    const messages: Message[] = [
+      { role: 'user', content: 'What is the weather?' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'call-1', name: 'get_weather', arguments: { city: 'Tokyo' } }],
+      },
+      { role: 'user', content: '{"temp": 20}', toolCallId: 'call-1', name: 'get_weather' },
+    ]
+
+    const collected: StreamChunk[] = []
+    for await (const chunk of result.data.stream(messages)) {
+      collected.push(chunk)
+    }
+
+    // fetch に渡されたリクエストボディを検証
+    const fetchMock = mockFetch as ReturnType<typeof vi.fn>
+    const callArgs = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(callArgs[1].body as string) as {
+      messages: Array<Record<string, unknown>>
+    }
+
+    // ツール結果メッセージは role: 'tool' に変換されること
+    expect(body.messages[2]).toEqual({ role: 'tool', content: '{"temp": 20}' })
+    // assistant + toolCalls は tool_calls 付きで送信されること
+    expect(body.messages[1]).toEqual({
+      role: 'assistant',
+      content: '',
+      tool_calls: [{ function: { name: 'get_weather', arguments: '{"city":"Tokyo"}' } }],
+    })
+  })
+
   // 12. ネットワークエラー → throw (stream中)
   it('ネットワークエラー → throw（stream中）', async () => {
     const mockFetch = makeMockErrorStreamFetch()

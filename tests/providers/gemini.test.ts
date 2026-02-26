@@ -295,6 +295,93 @@ describe('Gemini Provider', () => {
     })
   })
 
+  describe('ツール結果メッセージマッピング', () => {
+    // 13. toolCallId 付きメッセージが functionResponse 形式に変換される
+    it('toolCallId 付きメッセージが functionResponse 形式で API に送信される', async () => {
+      mockGenerateContent.mockResolvedValueOnce(
+        makeGeminiResponse([{ text: 'The temperature is 20C.' }]),
+      )
+      const config: ProviderConfig = { apiKey: 'test-api-key' }
+      const result = createGeminiProvider(config, 'gemini-pro')
+      if (!result.ok) throw new Error('provider creation failed')
+
+      await result.data.complete([
+        { role: 'user', content: 'What is the weather?' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: mockUUID, name: 'get_weather', arguments: { city: 'Tokyo' } }],
+        },
+        {
+          role: 'user',
+          content: '{"temp": 20}',
+          toolCallId: mockUUID,
+          name: 'get_weather',
+        },
+      ])
+
+      expect(mockGenerateContent).toHaveBeenCalledOnce()
+      const callArgs = mockGenerateContent.mock.calls[0]?.[0] as Record<string, unknown>
+      const contents = callArgs['contents'] as Array<Record<string, unknown>>
+
+      // ツール結果メッセージが functionResponse 形式に変換されていること
+      expect(contents[2]).toStrictEqual({
+        role: 'function',
+        parts: [
+          {
+            functionResponse: {
+              name: 'get_weather',
+              response: { content: '{"temp": 20}' },
+            },
+          },
+        ],
+      })
+    })
+
+    // 14. toolCalls 付き assistant メッセージが functionCall 形式に変換される
+    it('toolCalls 付き assistant メッセージが functionCall 形式で API に送信される', async () => {
+      mockGenerateContent.mockResolvedValueOnce(
+        makeGeminiResponse([{ text: 'The temperature is 20C.' }]),
+      )
+      const config: ProviderConfig = { apiKey: 'test-api-key' }
+      const result = createGeminiProvider(config, 'gemini-pro')
+      if (!result.ok) throw new Error('provider creation failed')
+
+      await result.data.complete([
+        { role: 'user', content: 'What is the weather?' },
+        {
+          role: 'assistant',
+          content: 'Let me check.',
+          toolCalls: [{ id: mockUUID, name: 'get_weather', arguments: { city: 'Tokyo' } }],
+        },
+        {
+          role: 'user',
+          content: '{"temp": 20}',
+          toolCallId: mockUUID,
+          name: 'get_weather',
+        },
+      ])
+
+      expect(mockGenerateContent).toHaveBeenCalledOnce()
+      const callArgs = mockGenerateContent.mock.calls[0]?.[0] as Record<string, unknown>
+      const contents = callArgs['contents'] as Array<Record<string, unknown>>
+
+      // assistant メッセージが functionCall 形式に変換されていること
+      expect(contents[1]).toStrictEqual({
+        role: 'model',
+        parts: [
+          { text: 'Let me check.' },
+          {
+            functionCall: {
+              name: 'get_weather',
+              args: { city: 'Tokyo' },
+            },
+          },
+        ],
+      })
+    })
+  })
+
   describe('stream()', () => {
     // 9. テキストdelta→StreamChunk.delta
     it('テキスト delta を StreamChunk.delta に変換する', async () => {

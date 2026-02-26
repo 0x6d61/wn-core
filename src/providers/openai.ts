@@ -20,15 +20,66 @@ import type { ProviderConfig } from '../loader/types.js'
 /**
  * OpenAI のメッセージ形式に変換する
  *
- * OpenAI は system ロールをそのままサポートするため、変換なしで渡す。
+ * AgentLoop からの3パターンを OpenAI API 形式にマッピングする:
+ * 1. ツール結果メッセージ（user + toolCallId） → role: 'tool'
+ * 2. アシスタントのツール呼び出しメッセージ（assistant + toolCalls） → role: 'assistant' + tool_calls
+ * 3. 通常メッセージ → そのまま渡す
  */
 function toOpenAIMessages(
   messages: readonly Message[],
 ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
-  return messages.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }))
+  return messages.map((m): OpenAI.Chat.Completions.ChatCompletionMessageParam => {
+    // パターン1: ツール結果メッセージ（user + toolCallId → tool ロールに変換）
+    if (m.toolCallId) {
+      const toolMsg: OpenAI.Chat.Completions.ChatCompletionToolMessageParam = {
+        role: 'tool',
+        content: m.content,
+        tool_call_id: m.toolCallId,
+      }
+      return toolMsg
+    }
+
+    // パターン2: アシスタントのツール呼び出しメッセージ
+    if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+      const assistantMsg: OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam = {
+        role: 'assistant',
+        content: m.content,
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: {
+            name: tc.name,
+            arguments: JSON.stringify(tc.arguments),
+          },
+        })),
+      }
+      return assistantMsg
+    }
+
+    // パターン3: 通常メッセージ（system / user / assistant）
+    if (m.role === 'system') {
+      const sysMsg: OpenAI.Chat.Completions.ChatCompletionSystemMessageParam = {
+        role: 'system',
+        content: m.content,
+      }
+      return sysMsg
+    }
+
+    if (m.role === 'assistant') {
+      const asstMsg: OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam = {
+        role: 'assistant',
+        content: m.content,
+      }
+      return asstMsg
+    }
+
+    // user ロール（toolCallId なし）
+    const userMsg: OpenAI.Chat.Completions.ChatCompletionUserMessageParam = {
+      role: 'user',
+      content: m.content,
+    }
+    return userMsg
+  })
 }
 
 /**

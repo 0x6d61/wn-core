@@ -305,6 +305,82 @@ describe('Claude Provider', () => {
     })
   })
 
+  describe('ツール結果メッセージマッピング', () => {
+    // 13. toolCallId 付きメッセージが tool_result 形式に変換される
+    it('toolCallId 付きメッセージが tool_result 形式で API に送信される', async () => {
+      mockCreate.mockResolvedValueOnce(makeMessage(['OK']))
+      const config: ProviderConfig = { apiKey: 'sk-ant-test-key' }
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      if (!result.ok) throw new Error('provider creation failed')
+
+      await result.data.complete([
+        { role: 'user', content: 'What is the weather?' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: 'toolu_abc', name: 'get_weather', arguments: { city: 'Tokyo' } }],
+        },
+        {
+          role: 'user',
+          content: '{"temp": 20}',
+          toolCallId: 'toolu_abc',
+          name: 'get_weather',
+        },
+      ])
+
+      expect(mockCreate).toHaveBeenCalledOnce()
+      const callArgs = mockCreate.mock.calls[0]?.[0] as Record<string, unknown>
+      const messages = callArgs['messages'] as Array<Record<string, unknown>>
+
+      // ツール結果メッセージが tool_result 形式に変換されていること
+      expect(messages[2]).toStrictEqual({
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'toolu_abc', content: '{"temp": 20}' }],
+      })
+    })
+
+    // 14. toolCalls 付き assistant メッセージが tool_use ブロック形式に変換される
+    it('toolCalls 付き assistant メッセージが tool_use ブロック形式で API に送信される', async () => {
+      mockCreate.mockResolvedValueOnce(makeMessage(['OK']))
+      const config: ProviderConfig = { apiKey: 'sk-ant-test-key' }
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      if (!result.ok) throw new Error('provider creation failed')
+
+      await result.data.complete([
+        { role: 'user', content: 'What is the weather?' },
+        {
+          role: 'assistant',
+          content: 'Let me check.',
+          toolCalls: [{ id: 'toolu_abc', name: 'get_weather', arguments: { city: 'Tokyo' } }],
+        },
+        {
+          role: 'user',
+          content: '{"temp": 20}',
+          toolCallId: 'toolu_abc',
+          name: 'get_weather',
+        },
+      ])
+
+      expect(mockCreate).toHaveBeenCalledOnce()
+      const callArgs = mockCreate.mock.calls[0]?.[0] as Record<string, unknown>
+      const messages = callArgs['messages'] as Array<Record<string, unknown>>
+
+      // assistant メッセージが content ブロック配列に変換されていること
+      expect(messages[1]).toStrictEqual({
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Let me check.' },
+          {
+            type: 'tool_use',
+            id: 'toolu_abc',
+            name: 'get_weather',
+            input: { city: 'Tokyo' },
+          },
+        ],
+      })
+    })
+  })
+
   describe('stream()', () => {
     // 9. テキストdelta→StreamChunk.delta
     it('テキスト delta を StreamChunk.delta に変換する', async () => {

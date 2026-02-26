@@ -86,12 +86,30 @@ interface MessageStreamLike extends AsyncIterable<StreamEvent> {
   finalMessage(): Promise<AnthropicMessage>
 }
 
+/** ストリームイベント型ガード */
+function isContentBlockStart(e: StreamEvent): e is StreamContentBlockStartEvent {
+  return e.type === 'content_block_start'
+}
+
+function isContentBlockDelta(e: StreamEvent): e is StreamContentBlockDeltaEvent {
+  return e.type === 'content_block_delta'
+}
+
+function isContentBlockStop(e: StreamEvent): e is StreamContentBlockStopEvent {
+  return e.type === 'content_block_stop'
+}
+
 /** content 配列からテキスト部分を結合する */
 function extractText(content: ReadonlyArray<AnthropicContentBlock>): string {
   return content
     .filter((block): block is AnthropicTextBlock => block.type === 'text')
     .map((block) => block.text)
     .join('')
+}
+
+/** unknown 値が Record<string, unknown> かどうかを判定する型ガード */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object'
 }
 
 /** content 配列から ToolCall[] を抽出する */
@@ -101,10 +119,7 @@ function extractToolCalls(content: ReadonlyArray<AnthropicContentBlock>): ToolCa
     .map((block) => ({
       id: block.id,
       name: block.name,
-      arguments:
-        block.input != null && typeof block.input === 'object'
-          ? (block.input as Record<string, unknown>)
-          : {},
+      arguments: isRecord(block.input) ? block.input : {},
     }))
 }
 
@@ -119,15 +134,70 @@ function mapUsage(usage: {
   }
 }
 
-/** messages から system メッセージを分離する */
+/**
+ * messages から system メッセージを分離し、非 system メッセージを Claude API 形式に変換する
+ *
+ * 3つのケースを処理する:
+ * 1. ツール結果メッセージ (role: 'user' + toolCallId) → tool_result 形式
+ * 2. アシスタントメッセージ with toolCalls → text + tool_use ブロック形式
+ * 3. 通常メッセージ → そのまま { role, content }
+ */
 function separateSystemMessages(messages: readonly Message[]): {
   system: string | undefined
-  nonSystemMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  nonSystemMessages: Array<Record<string, unknown>>
 } {
   const systemMessages = messages.filter((m) => m.role === 'system')
-  const nonSystemMessages = messages
-    .filter((m) => m.role !== 'system')
-    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+  const nonSystemMessages: Array<Record<string, unknown>> = []
+
+  for (const m of messages) {
+    if (m.role === 'system') {
+      continue
+    }
+
+    // Case 1: ツール結果メッセージ (role: 'user' + toolCallId)
+    if (m.role === 'user' && m.toolCallId !== undefined) {
+      nonSystemMessages.push({
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: m.toolCallId,
+            content: m.content,
+          },
+        ],
+      })
+      continue
+    }
+
+    // Case 2: アシスタントメッセージ with toolCalls
+    if (m.role === 'assistant' && m.toolCalls !== undefined && m.toolCalls.length > 0) {
+      const contentBlocks: Array<Record<string, unknown>> = []
+
+      // テキストがある場合のみ text ブロックを追加
+      if (m.content.length > 0) {
+        contentBlocks.push({ type: 'text', text: m.content })
+      }
+
+      // toolCalls を tool_use ブロックに変換
+      for (const tc of m.toolCalls) {
+        contentBlocks.push({
+          type: 'tool_use',
+          id: tc.id,
+          name: tc.name,
+          input: tc.arguments,
+        })
+      }
+
+      nonSystemMessages.push({
+        role: 'assistant',
+        content: contentBlocks,
+      })
+      continue
+    }
+
+    // Case 3: 通常メッセージ
+    nonSystemMessages.push({ role: m.role, content: m.content })
+  }
 
   const system =
     systemMessages.length > 0 ? systemMessages.map((m) => m.content).join('\n') : undefined
@@ -158,14 +228,10 @@ export function createClaudeProvider(config: ProviderConfig, model: string): Res
     return err('Claude provider requires an API key')
   }
 
-  const clientOptions: Record<string, unknown> = {
+  const client = new Anthropic({
     apiKey: config.apiKey,
-  }
-  if (config.baseUrl) {
-    clientOptions['baseURL'] = config.baseUrl
-  }
-
-  const client = new Anthropic(clientOptions as ConstructorParameters<typeof Anthropic>[0])
+    ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
+  })
 
   const provider: LLMProvider = {
     async complete(
@@ -237,70 +303,52 @@ export function createClaudeProvider(config: ProviderConfig, model: string): Res
       const toolBlocks = new Map<number, { id: string; name: string; inputJson: string }>()
 
       for await (const event of stream) {
-        switch (event.type) {
-          case 'content_block_start': {
-            const startEvent = event as StreamContentBlockStartEvent
-            if (startEvent.content_block.type === 'tool_use') {
-              toolBlocks.set(startEvent.index, {
-                id: startEvent.content_block.id ?? '',
-                name: startEvent.content_block.name ?? '',
-                inputJson: '',
-              })
-            }
-            break
+        if (isContentBlockStart(event)) {
+          if (event.content_block.type === 'tool_use') {
+            toolBlocks.set(event.index, {
+              id: event.content_block.id ?? '',
+              name: event.content_block.name ?? '',
+              inputJson: '',
+            })
           }
-
-          case 'content_block_delta': {
-            const deltaEvent = event as StreamContentBlockDeltaEvent
-            if (deltaEvent.delta.type === 'text_delta' && deltaEvent.delta.text !== undefined) {
-              yield { type: 'delta', content: deltaEvent.delta.text }
-            } else if (
-              deltaEvent.delta.type === 'input_json_delta' &&
-              deltaEvent.delta.partial_json !== undefined
-            ) {
-              const block = toolBlocks.get(deltaEvent.index)
-              if (block) {
-                block.inputJson += deltaEvent.delta.partial_json
-              }
-            }
-            break
-          }
-
-          case 'content_block_stop': {
-            const stopEvent = event as StreamContentBlockStopEvent
-            const block = toolBlocks.get(stopEvent.index)
+        } else if (isContentBlockDelta(event)) {
+          if (event.delta.type === 'text_delta' && event.delta.text !== undefined) {
+            yield { type: 'delta', content: event.delta.text }
+          } else if (
+            event.delta.type === 'input_json_delta' &&
+            event.delta.partial_json !== undefined
+          ) {
+            const block = toolBlocks.get(event.index)
             if (block) {
-              let parsedArgs: Record<string, unknown> = {}
-              try {
-                parsedArgs = JSON.parse(block.inputJson) as Record<string, unknown>
-              } catch {
-                // JSON パース失敗時は空オブジェクトにフォールバック
-              }
-              yield {
-                type: 'tool_call',
-                toolCall: {
-                  id: block.id,
-                  name: block.name,
-                  arguments: parsedArgs,
-                },
-              }
-              toolBlocks.delete(stopEvent.index)
+              block.inputJson += event.delta.partial_json
             }
-            break
           }
-
-          case 'message_stop': {
-            // finalMessage() から usage を取得
-            const finalMsg = await stream.finalMessage()
-            const usage = mapUsage(finalMsg.usage)
-            yield { type: 'done', usage }
-            break
+        } else if (isContentBlockStop(event)) {
+          const block = toolBlocks.get(event.index)
+          if (block) {
+            let parsedArgs: Record<string, unknown> = {}
+            try {
+              parsedArgs = JSON.parse(block.inputJson) as Record<string, unknown>
+            } catch {
+              // JSON パース失敗時は空オブジェクトにフォールバック
+            }
+            yield {
+              type: 'tool_call',
+              toolCall: {
+                id: block.id,
+                name: block.name,
+                arguments: parsedArgs,
+              },
+            }
+            toolBlocks.delete(event.index)
           }
-
-          default:
-            // 他のイベントタイプ（message_start, message_delta 等）は無視
-            break
+        } else if (event.type === 'message_stop') {
+          // finalMessage() から usage を取得
+          const finalMsg = await stream.finalMessage()
+          const usage = mapUsage(finalMsg.usage)
+          yield { type: 'done', usage }
         }
+        // 他のイベントタイプ（message_start, message_delta 等）は無視
       }
     },
   }

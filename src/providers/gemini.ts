@@ -10,6 +10,7 @@ import type {
   GenerateContentRequest,
   Content as GeminiSdkContent,
   FunctionDeclarationsTool,
+  Part as GeminiSdkPart,
 } from '@google/generative-ai'
 import { randomUUID } from 'node:crypto'
 import { ok, err } from '../result.js'
@@ -35,8 +36,51 @@ interface GeminiResponsePart {
 }
 
 /**
+ * 単一の非 system メッセージを Gemini SDK の Content に変換する。
+ *
+ * AgentLoop からのメッセージは3パターン:
+ * 1. ツール結果: role='user' + toolCallId → role='function' + functionResponse
+ * 2. ツール呼び出し付き assistant: role='assistant' + toolCalls → role='model' + functionCall parts
+ * 3. 通常メッセージ: role='user'|'assistant' → role='user'|'model' + text part
+ */
+function convertMessageToContent(m: Message): GeminiSdkContent {
+  // ツール結果メッセージ（user + toolCallId）→ function role
+  if (m.role === 'user' && m.toolCallId !== undefined) {
+    const responsePart: GeminiSdkPart = {
+      functionResponse: {
+        name: m.name ?? '',
+        response: { content: m.content },
+      },
+    }
+    return { role: 'function', parts: [responsePart] }
+  }
+
+  // ツール呼び出し付き assistant メッセージ → model role with functionCall parts
+  if (m.role === 'assistant' && m.toolCalls !== undefined && m.toolCalls.length > 0) {
+    const parts: GeminiSdkPart[] = []
+    if (m.content !== '') {
+      parts.push({ text: m.content })
+    }
+    for (const tc of m.toolCalls) {
+      parts.push({
+        functionCall: { name: tc.name, args: tc.arguments },
+      })
+    }
+    return { role: 'model', parts }
+  }
+
+  // 通常メッセージ
+  return {
+    role: m.role === 'assistant' ? 'model' : m.role,
+    parts: [{ text: m.content }],
+  }
+}
+
+/**
  * メッセージ配列から system メッセージを分離し、
  * Gemini 形式の contents と systemInstruction に変換する。
+ *
+ * ツール呼び出し・結果メッセージも Gemini 固有の形式に変換する。
  */
 function separateSystemMessages(messages: readonly Message[]): {
   contents: GeminiSdkContent[]
@@ -53,10 +97,7 @@ function separateSystemMessages(messages: readonly Message[]): {
         }
       : undefined
 
-  const contents: GeminiSdkContent[] = nonSystemMessages.map((m) => ({
-    role: m.role === 'assistant' ? 'model' : m.role,
-    parts: [{ text: m.content }],
-  }))
+  const contents: GeminiSdkContent[] = nonSystemMessages.map(convertMessageToContent)
 
   return { contents, systemInstruction }
 }
