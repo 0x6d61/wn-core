@@ -114,6 +114,16 @@ Configuration is loaded from two levels: `~/.wn/config.json` (global) and `.wn/c
 
 API keys can reference environment variables using `${ENV_VAR}` syntax.
 
+**OAuth Token (authToken):** Claude provider also supports OAuth authentication via `authToken`. Use `authToken` instead of `apiKey` when authenticating with a Claude OAuth token:
+
+```json
+{
+  "providers": {
+    "claude": { "authToken": "${ANTHROPIC_AUTH_TOKEN}" }
+  }
+}
+```
+
 **Priority (highest to lowest):** CLI flags > project-local `.wn/` > global `~/.wn/`
 
 ## Personas, Skills & Agents

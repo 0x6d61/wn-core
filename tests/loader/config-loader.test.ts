@@ -333,6 +333,60 @@ describe('loadConfig', () => {
     })
   })
 
+  // ── authToken サポート ──────────────────────────────────────
+
+  describe('authToken サポート', () => {
+    it('providers に authToken を含む設定を正しく読み込む', async () => {
+      writeConfig(globalDir, {
+        providers: {
+          claude: { authToken: '${WN_TEST_AUTH_TOKEN}' },
+        },
+      })
+
+      process.env['WN_TEST_AUTH_TOKEN'] = 'oauth-token-12345'
+      try {
+        const result = await loadConfig(globalDir, localDir)
+        expect(result.ok).toBe(true)
+        if (result.ok) {
+          expect(result.data.providers['claude']?.authToken).toBe('oauth-token-12345')
+        }
+      } finally {
+        delete process.env['WN_TEST_AUTH_TOKEN']
+      }
+    })
+
+    it('apiKey と authToken を同時に設定できる', async () => {
+      writeConfig(globalDir, {
+        providers: {
+          claude: { apiKey: 'sk-test', authToken: 'oauth-test' },
+        },
+      })
+
+      const result = await loadConfig(globalDir, localDir)
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data.providers['claude']?.apiKey).toBe('sk-test')
+        expect(result.data.providers['claude']?.authToken).toBe('oauth-test')
+      }
+    })
+
+    it('authToken が文字列でない場合はプロバイダー設定として認識しない', async () => {
+      writeConfig(globalDir, {
+        providers: {
+          claude: { authToken: 12345 },
+        },
+      })
+
+      const result = await loadConfig(globalDir, localDir)
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        // authToken が number なので isProviderConfig が false を返し、
+        // providers から除外される
+        expect(result.data.providers['claude']).toBeUndefined()
+      }
+    })
+  })
+
   // ── デフォルト値 ──────────────────────────────────────────
 
   describe('デフォルト値', () => {

@@ -137,18 +137,28 @@ describe('Claude Provider', () => {
 
   // 1. APIキーなし→err
   describe('createClaudeProvider', () => {
-    it('APIキーが設定されていない場合、err を返す', () => {
+    it('apiKey も authToken もない場合はエラーを返す', () => {
       const config: ProviderConfig = {}
       const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
       expect(result).toStrictEqual({
         ok: false,
-        error: 'Claude provider requires an API key',
+        error: 'Claude provider requires an API key or auth token',
       })
     })
 
     // 2. 正常作成→ok(LLMProvider)
     it('APIキーが設定されている場合、ok(LLMProvider) を返す', () => {
       const config: ProviderConfig = { apiKey: 'sk-ant-test-key' }
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data).toHaveProperty('complete')
+        expect(result.data).toHaveProperty('stream')
+      }
+    })
+
+    it('authToken のみで ok(LLMProvider) を返す', () => {
+      const config: ProviderConfig = { authToken: 'oauth-token-test' }
       const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
       expect(result.ok).toBe(true)
       if (result.ok) {
