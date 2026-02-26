@@ -241,6 +241,15 @@ export function createClaudeProvider(config: ProviderConfig, model: string): Res
     apiKey: apiKey ?? null,
     ...(authToken ? { authToken } : {}),
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
+    // OAuth トークン使用時は beta ヘッダーが必要
+    ...(authToken
+      ? {
+          defaultHeaders: {
+            'anthropic-beta': 'oauth-2025-04-20',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+        }
+      : {}),
   })
 
   const provider: LLMProvider = {

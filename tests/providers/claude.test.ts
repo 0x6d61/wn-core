@@ -270,6 +270,33 @@ describe('Claude Provider', () => {
       expect(constructorArgs['apiKey']).toBe('explicit-api-key')
       expect(constructorArgs['authToken']).toBe('env-oauth-token')
     })
+
+    it('authToken 使用時に OAuth beta ヘッダーが defaultHeaders に設定される', () => {
+      process.env['ANTHROPIC_AUTH_TOKEN'] = 'env-oauth-token'
+      mockConstructor.mockClear()
+
+      const config: ProviderConfig = {}
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+
+      const constructorArgs = mockConstructor.mock.calls[0]?.[0] as Record<string, unknown>
+      const headers = constructorArgs['defaultHeaders'] as Record<string, string>
+      expect(headers).toBeDefined()
+      expect(headers['anthropic-beta']).toBe('oauth-2025-04-20')
+      expect(headers['anthropic-dangerous-direct-browser-access']).toBe('true')
+    })
+
+    it('apiKey のみ使用時は OAuth beta ヘッダーが設定されない', () => {
+      process.env['ANTHROPIC_API_KEY'] = 'env-api-key'
+      mockConstructor.mockClear()
+
+      const config: ProviderConfig = {}
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+
+      const constructorArgs = mockConstructor.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(constructorArgs['defaultHeaders']).toBeUndefined()
+    })
   })
 
   describe('complete()', () => {
