@@ -19,5 +19,12 @@ export type {
 export type { ToolResult, ToolDefinition } from './tools/types.js'
 export { ToolRegistry } from './tools/types.js'
 
+// Built-in tools
+export { createReadTool } from './tools/read.js'
+export { createWriteTool } from './tools/write.js'
+export { createGrepTool } from './tools/grep.js'
+export { createShellTool, getShellConfig } from './tools/shell.js'
+export type { ShellConfig } from './tools/shell.js'
+
 // Agent types
 export type { SubAgentStatus, SubAgentHandle, AgentConfig, SubAgentRunner } from './agent/types.js'
