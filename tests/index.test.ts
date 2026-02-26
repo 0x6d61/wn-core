@@ -24,6 +24,24 @@ import {
   resolveWorkerData,
   isWorkerMessage,
   WorkerSubAgentRunner,
+  // RPC
+  JSON_RPC_ERROR_CODES,
+  RPC_METHODS,
+  isJsonRpcRequest,
+  isJsonRpcNotification,
+  isJsonRpcIncoming,
+  decodeJsonRpc,
+  encodeNotification,
+  encodeSuccessResponse,
+  encodeErrorResponse,
+  encodeParseError,
+  encodeMethodNotFound,
+  encodeInternalError,
+  MethodNotFoundError,
+  createRpcRequestHandler,
+  createRpcServer,
+  createStdioTransport,
+  createRpcAgentHandler,
 } from '../src/index.js'
 import type { ShellConfig } from '../src/index.js'
 import type {
@@ -61,6 +79,27 @@ import type {
   FrontmatterResult,
   LoaderError,
   LoaderErrorCode,
+  // RPC types
+  JsonRpcRequest,
+  JsonRpcNotification,
+  JsonRpcIncoming,
+  JsonRpcSuccessResponse,
+  JsonRpcErrorObject,
+  JsonRpcErrorResponse,
+  RpcResponseParams,
+  RpcToolExecParams,
+  RpcStateChangeParams,
+  RpcLogParams,
+  RpcInputParams,
+  RpcInputResult,
+  RpcAbortParams,
+  RpcAbortResult,
+  RpcConfigUpdateParams,
+  RpcConfigUpdateResult,
+  RpcTransport,
+  RpcRequestHandler,
+  RpcServer,
+  RpcServerOptions,
 } from '../src/index.js'
 
 describe('wn-core', () => {
@@ -259,5 +298,103 @@ describe('wn-core', () => {
 
     const code: LoaderErrorCode = 'IO_ERROR'
     expect(code).toBe('IO_ERROR')
+  })
+
+  it('RPC 定数がエクスポートされている', () => {
+    expect(JSON_RPC_ERROR_CODES.PARSE_ERROR).toBe(-32700)
+    expect(JSON_RPC_ERROR_CODES.INVALID_REQUEST).toBe(-32600)
+    expect(JSON_RPC_ERROR_CODES.METHOD_NOT_FOUND).toBe(-32601)
+    expect(JSON_RPC_ERROR_CODES.INVALID_PARAMS).toBe(-32602)
+    expect(JSON_RPC_ERROR_CODES.INTERNAL_ERROR).toBe(-32603)
+
+    expect(RPC_METHODS.RESPONSE).toBe('response')
+    expect(RPC_METHODS.TOOL_EXEC).toBe('toolExec')
+    expect(RPC_METHODS.STATE_CHANGE).toBe('stateChange')
+    expect(RPC_METHODS.LOG).toBe('log')
+    expect(RPC_METHODS.INPUT).toBe('input')
+    expect(RPC_METHODS.ABORT).toBe('abort')
+    expect(RPC_METHODS.CONFIG_UPDATE).toBe('configUpdate')
+  })
+
+  it('RPC protocol 関数がエクスポートされている', () => {
+    expect(typeof isJsonRpcRequest).toBe('function')
+    expect(typeof isJsonRpcNotification).toBe('function')
+    expect(typeof isJsonRpcIncoming).toBe('function')
+    expect(typeof decodeJsonRpc).toBe('function')
+    expect(typeof encodeNotification).toBe('function')
+    expect(typeof encodeSuccessResponse).toBe('function')
+    expect(typeof encodeErrorResponse).toBe('function')
+    expect(typeof encodeParseError).toBe('function')
+    expect(typeof encodeMethodNotFound).toBe('function')
+    expect(typeof encodeInternalError).toBe('function')
+  })
+
+  it('RPC server 関数・クラスがエクスポートされている', () => {
+    expect(typeof MethodNotFoundError).toBe('function')
+    expect(typeof createRpcRequestHandler).toBe('function')
+    expect(typeof createRpcServer).toBe('function')
+    expect(typeof createStdioTransport).toBe('function')
+    expect(typeof createRpcAgentHandler).toBe('function')
+
+    // MethodNotFoundError がインスタンス化可能
+    const err = new MethodNotFoundError('test')
+    expect(err).toBeInstanceOf(Error)
+    expect(err.method).toBe('test')
+  })
+
+  it('RPC 型がコンパイル時に利用可能（型チェック用）', () => {
+    const request: JsonRpcRequest = { jsonrpc: '2.0', id: 1, method: 'test' }
+    expect(request.method).toBe('test')
+
+    const notification: JsonRpcNotification = { jsonrpc: '2.0', method: 'notify' }
+    expect(notification.method).toBe('notify')
+
+    const incoming: JsonRpcIncoming = request
+    expect(incoming.jsonrpc).toBe('2.0')
+
+    const successResponse: JsonRpcSuccessResponse = { jsonrpc: '2.0', id: 1, result: 'ok' }
+    expect(successResponse.result).toBe('ok')
+
+    const errorObj: JsonRpcErrorObject = { code: -32600, message: 'bad' }
+    expect(errorObj.code).toBe(-32600)
+
+    const errorResponse: JsonRpcErrorResponse = { jsonrpc: '2.0', id: null, error: errorObj }
+    expect(errorResponse.error.code).toBe(-32600)
+
+    const responseParams: RpcResponseParams = { content: 'hello' }
+    expect(responseParams.content).toBe('hello')
+
+    const toolExecParams: RpcToolExecParams = { event: 'start', name: 'read', args: {} }
+    expect(toolExecParams.event).toBe('start')
+
+    const stateParams: RpcStateChangeParams = { state: 'thinking' }
+    expect(stateParams.state).toBe('thinking')
+
+    const logParams: RpcLogParams = { level: 'error', message: 'oops' }
+    expect(logParams.level).toBe('error')
+
+    const inputParams: RpcInputParams = { text: 'hello' }
+    expect(inputParams.text).toBe('hello')
+
+    const inputResult: RpcInputResult = { accepted: true }
+    expect(inputResult.accepted).toBe(true)
+
+    const abortParams: RpcAbortParams = {}
+    expect(abortParams).toEqual({})
+
+    const abortResult: RpcAbortResult = { aborted: true }
+    expect(abortResult.aborted).toBe(true)
+
+    const configParams: RpcConfigUpdateParams = { provider: 'claude' }
+    expect(configParams.provider).toBe('claude')
+
+    const configResult: RpcConfigUpdateResult = { applied: true }
+    expect(configResult.applied).toBe(true)
+
+    // インターフェース型は import 可能であることが検証
+    expect(undefined as RpcTransport | undefined).toBeUndefined()
+    expect(undefined as RpcRequestHandler | undefined).toBeUndefined()
+    expect(undefined as RpcServer | undefined).toBeUndefined()
+    expect(undefined as RpcServerOptions | undefined).toBeUndefined()
   })
 })
