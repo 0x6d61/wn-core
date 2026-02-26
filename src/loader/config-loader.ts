@@ -125,6 +125,7 @@ function substituteEnvVars(obj: unknown): unknown {
 function isProviderConfig(value: unknown): value is ProviderConfig {
   if (!isPlainObject(value)) return false
   if ('apiKey' in value && typeof value['apiKey'] !== 'string') return false
+  if ('authToken' in value && typeof value['authToken'] !== 'string') return false
   if ('baseUrl' in value && typeof value['baseUrl'] !== 'string') return false
   return true
 }

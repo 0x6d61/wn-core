@@ -219,17 +219,18 @@ function convertTools(
 /**
  * Claude (Anthropic) LLM プロバイダーを作成する
  *
- * @param config - プロバイダー設定（apiKey 必須）
+ * @param config - プロバイダー設定（apiKey または authToken が必須）
  * @param model - 使用するモデル名（例: 'claude-sonnet-4-20250514'）
  * @returns Result<LLMProvider> - 成功時は LLMProvider、失敗時はエラーメッセージ
  */
 export function createClaudeProvider(config: ProviderConfig, model: string): Result<LLMProvider> {
-  if (!config.apiKey) {
-    return err('Claude provider requires an API key')
+  if (!config.apiKey && !config.authToken) {
+    return err('Claude provider requires an API key or auth token')
   }
 
   const client = new Anthropic({
-    apiKey: config.apiKey,
+    apiKey: config.apiKey ?? null,
+    authToken: config.authToken ?? null,
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
   })
 

@@ -112,6 +112,16 @@ if (result.ok) {
 
 API キーは `${ENV_VAR}` 形式で環境変数を参照できます。
 
+**OAuth トークン (authToken):** Claude プロバイダーは OAuth 認証にも対応しています。Claude OAuth トークンで認証する場合は `apiKey` の代わりに `authToken` を使用してください:
+
+```json
+{
+  "providers": {
+    "claude": { "authToken": "${ANTHROPIC_AUTH_TOKEN}" }
+  }
+}
+```
+
 **優先順位（高 → 低）:** CLI フラグ > プロジェクトローカル `.wn/` > グローバル `~/.wn/`
 
 ## Persona / Skill / Agent

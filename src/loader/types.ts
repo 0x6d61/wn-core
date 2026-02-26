@@ -13,6 +13,7 @@ export interface McpConfig {
 /** LLM プロバイダー設定 */
 export interface ProviderConfig {
   readonly apiKey?: string
+  readonly authToken?: string
   readonly baseUrl?: string
 }
 
