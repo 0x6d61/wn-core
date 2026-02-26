@@ -13,7 +13,14 @@ export type {
   TokenUsage,
   LLMResponse,
   LLMProvider,
+  StreamChunk,
 } from './providers/types.js'
+
+// LLM Provider factories
+export { createClaudeProvider } from './providers/claude.js'
+export { createOpenAIProvider } from './providers/openai.js'
+export { createOllamaProvider } from './providers/ollama.js'
+export { createGeminiProvider } from './providers/gemini.js'
 
 // Tool types + ToolRegistry
 export type { ToolResult, ToolDefinition } from './tools/types.js'

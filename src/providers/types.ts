@@ -17,6 +17,12 @@ export interface Message {
   readonly toolCalls?: readonly ToolCall[]
 }
 
+/** ストリーミングチャンク */
+export type StreamChunk =
+  | { readonly type: 'delta'; readonly content: string }
+  | { readonly type: 'tool_call'; readonly toolCall: ToolCall }
+  | { readonly type: 'done'; readonly usage?: TokenUsage }
+
 /** LLM に渡すツール定義 */
 export interface Tool {
   readonly name: string
@@ -54,5 +60,5 @@ export interface LLMProvider {
   complete(messages: readonly Message[], tools?: readonly Tool[]): Promise<Result<LLMResponse>>
 
   /** ストリーミングでレスポンスを取得する（オプション） */
-  stream?(messages: readonly Message[], tools?: readonly Tool[]): AsyncIterable<string>
+  stream?(messages: readonly Message[], tools?: readonly Tool[]): AsyncIterable<StreamChunk>
 }
