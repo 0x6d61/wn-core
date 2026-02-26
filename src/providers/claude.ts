@@ -224,8 +224,11 @@ function convertTools(
  * @returns Result<LLMProvider> - 成功時は LLMProvider、失敗時はエラーメッセージ
  */
 export function createClaudeProvider(config: ProviderConfig, model: string): Result<LLMProvider> {
-  const apiKey = config.apiKey ?? process.env['ANTHROPIC_API_KEY']
   const authToken = config.authToken ?? process.env['ANTHROPIC_AUTH_TOKEN']
+  // authToken が利用可能な場合は apiKey の env fallback をスキップする。
+  // SDK は X-Api-Key と Authorization ヘッダーを両方同時に送信するため、
+  // 無効な apiKey があるとサーバーが 401 を返す。
+  const apiKey = config.apiKey ?? (authToken ? undefined : process.env['ANTHROPIC_API_KEY'])
 
   if (!apiKey && !authToken) {
     return err(
@@ -234,7 +237,8 @@ export function createClaudeProvider(config: ProviderConfig, model: string): Res
   }
 
   const client = new Anthropic({
-    ...(apiKey ? { apiKey } : {}),
+    // null を明示的に渡すことで SDK の ANTHROPIC_API_KEY 環境変数自動検出を抑制する
+    apiKey: apiKey ?? null,
     ...(authToken ? { authToken } : {}),
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
   })

@@ -5,6 +5,7 @@ import type { StreamChunk } from '../../src/providers/types.js'
 // --- Anthropic SDK モック ---
 const mockCreate = vi.fn()
 const mockStream = vi.fn()
+const mockConstructor = vi.fn()
 
 vi.mock('@anthropic-ai/sdk', () => {
   return {
@@ -12,6 +13,9 @@ vi.mock('@anthropic-ai/sdk', () => {
       messages = {
         create: mockCreate,
         stream: mockStream,
+      }
+      constructor(opts?: Record<string, unknown>) {
+        mockConstructor(opts)
       }
     },
   }
@@ -222,6 +226,49 @@ describe('Claude Provider', () => {
       const config: ProviderConfig = {}
       const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
       expect(result.ok).toBe(false)
+    })
+
+    it('ANTHROPIC_AUTH_TOKEN 使用時に ANTHROPIC_API_KEY が環境変数にあっても apiKey を SDK に渡さない', () => {
+      process.env['ANTHROPIC_AUTH_TOKEN'] = 'env-oauth-token'
+      process.env['ANTHROPIC_API_KEY'] = 'env-invalid-api-key'
+      mockConstructor.mockClear()
+
+      const config: ProviderConfig = {}
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+
+      // SDK コンストラクタに渡された引数を検証
+      const constructorArgs = mockConstructor.mock.calls[0]?.[0] as Record<string, unknown>
+      // apiKey は null であること（SDK の env var 自動検出を抑制するため）
+      expect(constructorArgs['apiKey']).toBeNull()
+      // authToken は渡されていること
+      expect(constructorArgs['authToken']).toBe('env-oauth-token')
+    })
+
+    it('ANTHROPIC_AUTH_TOKEN のみ設定時に apiKey: null が SDK に渡される（自動検出抑制）', () => {
+      process.env['ANTHROPIC_AUTH_TOKEN'] = 'env-oauth-token'
+      mockConstructor.mockClear()
+
+      const config: ProviderConfig = {}
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+
+      const constructorArgs = mockConstructor.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(constructorArgs['apiKey']).toBeNull()
+      expect(constructorArgs['authToken']).toBe('env-oauth-token')
+    })
+
+    it('config.apiKey 明示指定時は authToken があっても apiKey が SDK に渡される', () => {
+      process.env['ANTHROPIC_AUTH_TOKEN'] = 'env-oauth-token'
+      mockConstructor.mockClear()
+
+      const config: ProviderConfig = { apiKey: 'explicit-api-key' }
+      const result = createClaudeProvider(config, 'claude-sonnet-4-20250514')
+      expect(result.ok).toBe(true)
+
+      const constructorArgs = mockConstructor.mock.calls[0]?.[0] as Record<string, unknown>
+      expect(constructorArgs['apiKey']).toBe('explicit-api-key')
+      expect(constructorArgs['authToken']).toBe('env-oauth-token')
     })
   })
 
