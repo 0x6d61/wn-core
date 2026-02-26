@@ -1,6 +1,6 @@
 {
   "name": "@0x6d61/wn-core",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Lightweight AI Agent Core Framework",
   "type": "module",
   "main": "dist/index.js",
