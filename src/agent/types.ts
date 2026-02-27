@@ -92,6 +92,7 @@ export interface AgentLoopOptions {
   readonly tools: ToolRegistry
   readonly handler: AgentLoopHandler
   readonly systemMessage?: string
+  /** ツール呼び出しラウンドの上限。省略時は無制限（Infinity） */
   readonly maxToolRounds?: number
   readonly signal?: AbortSignal
 }
