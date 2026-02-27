@@ -3,8 +3,6 @@ import { ok, err } from '../result.js'
 import type { Message, Tool } from '../providers/types.js'
 import type { AgentLoopHandler, AgentLoopOptions, AgentLoopState } from './types.js'
 
-const DEFAULT_MAX_TOOL_ROUNDS = 10
-
 /**
  * AgentLoop — LLMProvider + ToolRegistry を接続する対話ループ
  *
@@ -25,7 +23,7 @@ export class AgentLoop {
       provider: opts.provider,
       tools: opts.tools,
       handler: opts.handler,
-      maxToolRounds: opts.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS,
+      maxToolRounds: opts.maxToolRounds ?? Infinity,
       signal: opts.signal,
     }
 

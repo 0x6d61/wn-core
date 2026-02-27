@@ -87,10 +87,8 @@ describe('AgentLoop', () => {
   // constructor
   // -------------------------------------------------------------------------
   describe('constructor', () => {
-    it('デフォルトの maxToolRounds は 10', () => {
-      // maxToolRounds を指定せずに構築し、10 ラウンド目で打ち切られることを間接検証する。
-      // ここでは内部状態の確認が難しいため、step() で 10 回ツールを返して
-      // エラーになることで検証する（エラー/ガードセクションの test 14 で詳細検証）。
+    it('デフォルトではラウンド制限なし（maxToolRounds 省略時）', () => {
+      // maxToolRounds を指定せずに構築 → デフォルトは Infinity（無制限）。
       // constructor レベルではオプション省略時にエラーにならないことを検証。
       const loop = new AgentLoop({
         provider: mockProvider,
