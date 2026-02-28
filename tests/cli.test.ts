@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Result } from '../src/result.js'
 import type { LLMProvider } from '../src/providers/types.js'
+import type { AgentLoopHandler } from '../src/agent/types.js'
+import { ToolRegistry } from '../src/tools/types.js'
 
 // --- Provider ファクトリのモック ---
 
@@ -27,11 +29,47 @@ vi.mock('../src/providers/gemini.js', () => ({
 }))
 
 // テスト対象をインポート（モック定義後）
-import { createProvider, createDefaultToolRegistry, createServeHandler } from '../src/cli.js'
+import {
+  createProvider,
+  createDefaultToolRegistry,
+  createServeHandler,
+  type ServeHandlerDeps,
+} from '../src/cli.js'
 import { createClaudeProvider } from '../src/providers/claude.js'
 import { createOpenAIProvider } from '../src/providers/openai.js'
 import { createOllamaProvider } from '../src/providers/ollama.js'
 import { createGeminiProvider } from '../src/providers/gemini.js'
+
+// --- テスト用ヘルパー ---
+
+function createMockAgentHandler(): AgentLoopHandler {
+  return {
+    onResponse: vi.fn(),
+    onToolStart: vi.fn(),
+    onToolEnd: vi.fn(),
+    onStateChange: vi.fn(),
+    onError: vi.fn(),
+    onUsage: vi.fn(),
+  }
+}
+
+function createMockDeps(overrides?: Partial<ServeHandlerDeps>): ServeHandlerDeps {
+  const mockStep = vi.fn().mockResolvedValue({ ok: true, data: 'response' })
+  return {
+    config: {
+      defaultProvider: 'claude',
+      defaultModel: 'claude-sonnet-4-20250514',
+      defaultPersona: 'default',
+      providers: { claude: { apiKey: 'test-key' }, openai: { apiKey: 'oai-key' } },
+    },
+    agentLoopRef: { current: { step: mockStep } as unknown as import('../src/agent/agent-loop.js').AgentLoop },
+    abortController: new AbortController(),
+    toolRegistry: new ToolRegistry(),
+    agentHandlerRef: { current: createMockAgentHandler() },
+    systemMessage: undefined,
+    ...overrides,
+  }
+}
 
 // ─── createProvider ───
 
@@ -129,48 +167,144 @@ describe('createDefaultToolRegistry', () => {
 // ─── createServeHandler ───
 
 describe('createServeHandler', () => {
-  it('input メソッドで agentLoop.step(text) を呼び、 { accepted: boolean } を返す', async () => {
-    const mockStep = vi.fn().mockResolvedValue({ ok: true, data: 'response' })
-    const mockAgentLoop = { step: mockStep } as unknown as Parameters<typeof createServeHandler>[0]
-    const abortController = new AbortController()
-
-    const handler = createServeHandler(mockAgentLoop, abortController)
-    const result = await handler('input', { text: 'hello' })
-
-    expect(mockStep).toHaveBeenCalledWith('hello')
-    expect(result).toEqual({ accepted: true })
+  beforeEach(() => {
+    vi.clearAllMocks()
   })
 
-  it('input メソッドで step が失敗した場合 accepted: false を返す', async () => {
-    const mockStep = vi.fn().mockResolvedValue({ ok: false, error: 'fail' })
-    const mockAgentLoop = { step: mockStep } as unknown as Parameters<typeof createServeHandler>[0]
-    const abortController = new AbortController()
+  describe('input', () => {
+    it('agentLoopRef.current が存在する場合 step を呼び accepted を返す', async () => {
+      const mockStep = vi.fn().mockResolvedValue({ ok: true, data: 'response' })
+      const deps = createMockDeps({
+        agentLoopRef: { current: { step: mockStep } as unknown as import('../src/agent/agent-loop.js').AgentLoop },
+      })
 
-    const handler = createServeHandler(mockAgentLoop, abortController)
-    const result = await handler('input', { text: 'hello' })
+      const handler = createServeHandler(deps)
+      const result = await handler('input', { text: 'hello' })
 
-    expect(result).toEqual({ accepted: false })
+      expect(mockStep).toHaveBeenCalledWith('hello')
+      expect(result).toEqual({ accepted: true })
+    })
+
+    it('step が失敗した場合 accepted: false を返す', async () => {
+      const mockStep = vi.fn().mockResolvedValue({ ok: false, error: 'fail' })
+      const deps = createMockDeps({
+        agentLoopRef: { current: { step: mockStep } as unknown as import('../src/agent/agent-loop.js').AgentLoop },
+      })
+
+      const handler = createServeHandler(deps)
+      const result = await handler('input', { text: 'hello' })
+
+      expect(result).toEqual({ accepted: false })
+    })
+
+    it('agentLoopRef.current が undefined の場合 accepted: false を返す', async () => {
+      const deps = createMockDeps({ agentLoopRef: { current: undefined } })
+
+      const handler = createServeHandler(deps)
+      const result = await handler('input', { text: 'hello' })
+
+      expect(result).toEqual({ accepted: false })
+    })
   })
 
-  it('abort メソッドで abortController.abort() を呼び { aborted: true } を返す', async () => {
-    const mockAgentLoop = { step: vi.fn() } as unknown as Parameters<typeof createServeHandler>[0]
-    const abortController = new AbortController()
-    const abortSpy = vi.spyOn(abortController, 'abort')
+  describe('abort', () => {
+    it('abortController.abort() を呼び { aborted: true } を返す', async () => {
+      const deps = createMockDeps()
+      const abortSpy = vi.spyOn(deps.abortController, 'abort')
 
-    const handler = createServeHandler(mockAgentLoop, abortController)
-    const result = await handler('abort', {})
+      const handler = createServeHandler(deps)
+      const result = await handler('abort', {})
 
-    expect(abortSpy).toHaveBeenCalled()
-    expect(result).toEqual({ aborted: true })
+      expect(abortSpy).toHaveBeenCalled()
+      expect(result).toEqual({ aborted: true })
+    })
   })
 
-  it('configUpdate メソッドで { applied: true } を返す', async () => {
-    const mockAgentLoop = { step: vi.fn() } as unknown as Parameters<typeof createServeHandler>[0]
-    const abortController = new AbortController()
+  describe('configUpdate', () => {
+    it('provider と model を指定して新しい AgentLoop を生成し applied: true を返す', async () => {
+      const deps = createMockDeps()
+      const handler = createServeHandler(deps)
 
-    const handler = createServeHandler(mockAgentLoop, abortController)
-    const result = await handler('configUpdate', {})
+      const result = await handler('configUpdate', { provider: 'openai', model: 'gpt-4o' })
 
-    expect(result).toEqual({ applied: true })
+      expect(result).toEqual({ applied: true })
+      expect(createOpenAIProvider).toHaveBeenCalledWith({ apiKey: 'oai-key' }, 'gpt-4o')
+      expect(deps.agentLoopRef.current).toBeDefined()
+    })
+
+    it('provider のみ指定した場合 model は config.defaultModel を使う', async () => {
+      const deps = createMockDeps()
+      const handler = createServeHandler(deps)
+
+      const result = await handler('configUpdate', { provider: 'ollama' })
+
+      expect(result).toEqual({ applied: true })
+      expect(createOllamaProvider).toHaveBeenCalledWith({}, 'claude-sonnet-4-20250514')
+    })
+
+    it('model のみ指定した場合 provider は config.defaultProvider を使う', async () => {
+      const deps = createMockDeps()
+      const handler = createServeHandler(deps)
+
+      const result = await handler('configUpdate', { model: 'claude-opus-4-20250514' })
+
+      expect(result).toEqual({ applied: true })
+      expect(createClaudeProvider).toHaveBeenCalledWith(
+        { apiKey: 'test-key' },
+        'claude-opus-4-20250514',
+      )
+    })
+
+    it('provider 生成に失敗した場合 applied: false を返しクラッシュしない', async () => {
+      const deps = createMockDeps()
+      const oldLoop = deps.agentLoopRef.current
+      const handler = createServeHandler(deps)
+
+      const result = await handler('configUpdate', { provider: 'unknown-provider' })
+
+      expect(result).toEqual({ applied: false })
+      // 元の agentLoopRef は変更されていない
+      expect(deps.agentLoopRef.current).toBe(oldLoop)
+    })
+
+    it('providers に設定がない provider を指定した場合 空の config で生成する', async () => {
+      const deps = createMockDeps({
+        config: {
+          defaultProvider: 'claude',
+          defaultModel: 'claude-sonnet-4-20250514',
+          defaultPersona: 'default',
+          providers: {},
+        },
+      })
+      const handler = createServeHandler(deps)
+
+      const result = await handler('configUpdate', { provider: 'ollama', model: 'llama3' })
+
+      expect(result).toEqual({ applied: true })
+      expect(createOllamaProvider).toHaveBeenCalledWith({}, 'llama3')
+    })
+
+    it('成功時に agentLoopRef.current が新しいインスタンスに差し替わる', async () => {
+      const deps = createMockDeps()
+      const oldLoop = deps.agentLoopRef.current
+      const handler = createServeHandler(deps)
+
+      await handler('configUpdate', { provider: 'claude', model: 'claude-opus-4-20250514' })
+
+      expect(deps.agentLoopRef.current).not.toBe(oldLoop)
+    })
+
+    it('パラメータなし(空オブジェクト)の場合 現在のデフォルト設定で再生成する', async () => {
+      const deps = createMockDeps()
+      const handler = createServeHandler(deps)
+
+      const result = await handler('configUpdate', {})
+
+      expect(result).toEqual({ applied: true })
+      expect(createClaudeProvider).toHaveBeenCalledWith(
+        { apiKey: 'test-key' },
+        'claude-sonnet-4-20250514',
+      )
+    })
   })
 })
