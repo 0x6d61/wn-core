@@ -166,13 +166,16 @@ async function serve(args: { provider?: string; model?: string; persona?: string
     mcpManager = createMcpManager(config.mcp)
     const connectResult = await mcpManager.connectAll()
     if (connectResult.ok) {
-      for (const conn of connectResult.data) {
+      for (const warning of connectResult.data.warnings) {
+        console.error(`MCP connection warning: ${warning}`)
+      }
+      for (const conn of connectResult.data.connections) {
         for (const tool of conn.tools) {
           toolRegistry.registerMcp(tool)
         }
       }
     } else {
-      console.error(`MCP connection warning: ${connectResult.error}`)
+      console.error(`MCP connection error: ${connectResult.error}`)
     }
   }
 

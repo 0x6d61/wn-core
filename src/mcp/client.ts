@@ -4,7 +4,7 @@ import type { Result } from '../result.js'
 import { ok, err } from '../result.js'
 import type { McpConfig, McpServerConfig } from '../loader/types.js'
 import type { ToolDefinition, ToolResult } from '../tools/types.js'
-import type { McpConnection, McpManager } from './types.js'
+import type { McpConnection, McpManager, ConnectAllResult } from './types.js'
 
 /**
  * MCP サーバー1台に接続し、ツール定義を取得する。
@@ -17,6 +17,7 @@ async function connectServer(serverConfig: McpServerConfig): Promise<Result<McpC
   const transport = new StdioClientTransport({
     command: serverConfig.command,
     args: [...serverConfig.args],
+    ...(serverConfig.env !== undefined ? { env: { ...serverConfig.env } } : {}),
   })
 
   try {
@@ -116,11 +117,11 @@ export function createMcpManager(config: McpConfig): McpManager {
   let connections: McpConnection[] = []
 
   return {
-    async connectAll(): Promise<Result<readonly McpConnection[]>> {
+    async connectAll(): Promise<Result<ConnectAllResult>> {
       const servers = config.servers
 
       if (servers.length === 0) {
-        return ok([])
+        return ok({ connections: [], warnings: [] })
       }
 
       const results = await Promise.allSettled(
@@ -150,7 +151,7 @@ export function createMcpManager(config: McpConfig): McpManager {
       }
 
       connections = succeeded
-      return ok(succeeded)
+      return ok({ connections: succeeded, warnings: errors })
     },
 
     async closeAll(): Promise<void> {
