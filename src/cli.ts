@@ -12,7 +12,7 @@ import path from 'node:path'
 import type { Result } from './result.js'
 import { err } from './result.js'
 import type { LLMProvider } from './providers/types.js'
-import type { ProviderConfig } from './loader/types.js'
+import type { ProviderConfig, WnConfig } from './loader/types.js'
 import type { RpcRequestHandler } from './rpc/types.js'
 import { createClaudeProvider } from './providers/claude.js'
 import { createOpenAIProvider } from './providers/openai.js'
@@ -23,7 +23,8 @@ import { createWriteTool } from './tools/write.js'
 import { createShellTool } from './tools/shell.js'
 import { createGrepTool } from './tools/grep.js'
 import { ToolRegistry } from './tools/types.js'
-import { AgentLoop } from './agent/agent-loop.js'
+import { AgentLoop, createNoopHandler } from './agent/agent-loop.js'
+import type { AgentLoopHandler } from './agent/types.js'
 import {
   createRpcRequestHandler,
   createRpcServer,
@@ -75,28 +76,91 @@ export function createDefaultToolRegistry(): ToolRegistry {
   return registry
 }
 
+// ─── ServeHandlerDeps ───
+
+/**
+ * createServeHandler に必要な依存オブジェクト
+ *
+ * configUpdate によるホットスワップ時に AgentLoop を再生成するために、
+ * プロバイダー設定やツールレジストリへの参照が必要。
+ */
+export interface ServeHandlerDeps {
+  readonly config: WnConfig
+  readonly agentLoopRef: { current: AgentLoop | undefined }
+  readonly abortController: AbortController
+  readonly toolRegistry: ToolRegistry
+  readonly agentHandlerRef: { current: AgentLoopHandler }
+  readonly systemMessage: string | undefined
+}
+
+// ─── 型ガード ───
+
+/** configUpdate パラメータの型ガード */
+function isConfigUpdateParams(
+  value: unknown,
+): value is { provider?: string; model?: string } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const obj = value as Record<string, unknown>
+  if ('provider' in obj && typeof obj['provider'] !== 'string') return false
+  if ('model' in obj && typeof obj['model'] !== 'string') return false
+  return true
+}
+
+/** input パラメータの型ガード */
+function isInputParams(value: unknown): value is { text: string } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const obj = value as Record<string, unknown>
+  return 'text' in obj && typeof obj['text'] === 'string'
+}
+
 // ─── createServeHandler ───
 
 /**
- * AgentLoop と AbortController から RPC リクエストハンドラを生成する
+ * 依存オブジェクトから RPC リクエストハンドラを生成する
  *
  * TUI → Core 方向のリクエスト（input, abort, configUpdate）を処理する。
+ * configUpdate ではプロバイダー/モデルのホットスワップを行う。
  */
-export function createServeHandler(
-  agentLoop: AgentLoop,
-  abortController: AbortController,
-): RpcRequestHandler {
+export function createServeHandler(deps: ServeHandlerDeps): RpcRequestHandler {
   return createRpcRequestHandler({
     async input(params: unknown): Promise<unknown> {
-      const { text } = params as { text: string }
-      const result = await agentLoop.step(text)
+      if (!isInputParams(params)) {
+        return { accepted: false }
+      }
+      const loop = deps.agentLoopRef.current
+      if (!loop) {
+        return { accepted: false }
+      }
+      const result = await loop.step(params.text)
       return { accepted: result.ok }
     },
     abort(): Promise<unknown> {
-      abortController.abort()
+      deps.abortController.abort()
       return Promise.resolve({ aborted: true })
     },
-    configUpdate(): Promise<unknown> {
+    configUpdate(params: unknown): Promise<unknown> {
+      if (!isConfigUpdateParams(params)) {
+        return Promise.resolve({ applied: false })
+      }
+
+      const providerName = params.provider ?? deps.config.defaultProvider
+      const modelName = params.model ?? deps.config.defaultModel
+      const providerConfig = deps.config.providers[providerName] ?? {}
+
+      const providerResult = createProvider(providerName, providerConfig, modelName)
+      if (!providerResult.ok) {
+        return Promise.resolve({ applied: false })
+      }
+
+      deps.agentLoopRef.current = new AgentLoop({
+        provider: providerResult.data,
+        tools: deps.toolRegistry,
+        handler: deps.agentHandlerRef.current,
+        systemMessage: deps.systemMessage,
+        signal: deps.abortController.signal,
+      })
+
+      console.error(`Config updated: provider=${providerName}, model=${modelName}`)
       return Promise.resolve({ applied: true })
     },
   })
@@ -186,35 +250,27 @@ async function serve(args: { provider?: string; model?: string; persona?: string
   // 8. RPC トランスポート + サーバー（循環参照回避）
   const transport = createStdioTransport(process.stdin, process.stdout)
 
-  // agentLoop を後から代入するため配列で間接参照
-  const agentLoopRef: [AgentLoop | undefined] = [undefined]
+  // agentLoop / agentHandler を後から代入するためオブジェクトで間接参照
+  const agentLoopRef: { current: AgentLoop | undefined } = { current: undefined }
+  const agentHandlerRef: { current: AgentLoopHandler } = { current: createNoopHandler() }
 
-  // RPC ハンドラは agentLoopRef 経由で AgentLoop を参照する（循環参照回避）
-  const rpcHandler = createRpcRequestHandler({
-    async input(params: unknown): Promise<unknown> {
-      const { text } = params as { text: string }
-      const loop = agentLoopRef[0]
-      if (!loop) {
-        return { accepted: false }
-      }
-      const result = await loop.step(text)
-      return { accepted: result.ok }
-    },
-    abort(): Promise<unknown> {
-      abortController.abort()
-      return Promise.resolve({ aborted: true })
-    },
-    configUpdate(): Promise<unknown> {
-      return Promise.resolve({ applied: true })
-    },
+  // createServeHandler で統一的にハンドラを生成（configUpdate ホットスワップ対応）
+  const rpcHandler = createServeHandler({
+    config,
+    agentLoopRef,
+    abortController,
+    toolRegistry,
+    agentHandlerRef,
+    systemMessage,
   })
 
   const rpcServer = createRpcServer({ transport, handler: rpcHandler })
 
   // AgentLoop のイベントを RPC 通知としてクライアントに送信する
   const agentHandler = createRpcAgentHandler(rpcServer)
+  agentHandlerRef.current = agentHandler
 
-  agentLoopRef[0] = new AgentLoop({
+  agentLoopRef.current = new AgentLoop({
     provider,
     tools: toolRegistry,
     handler: agentHandler,
