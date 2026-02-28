@@ -387,6 +387,101 @@ describe('loadConfig', () => {
     })
   })
 
+  // ── MCP env サポート ──────────────────────────────────────────
+
+  describe('MCP env サポート', () => {
+    it('mcp.servers に env フィールドを含む設定を正しく読み込む', async () => {
+      writeConfig(localDir, {
+        mcp: {
+          servers: [
+            {
+              name: 'sonobat',
+              command: 'npx',
+              args: ['-y', 'sonobat'],
+              env: { SONOBAT_DB_PATH: 'sonobat.db' },
+            },
+          ],
+        },
+      })
+
+      const result = await loadConfig(globalDir, localDir)
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data.mcp?.servers).toHaveLength(1)
+        const server = result.data.mcp?.servers[0]
+        expect(server?.name).toBe('sonobat')
+        expect(server?.env).toStrictEqual({ SONOBAT_DB_PATH: 'sonobat.db' })
+      }
+    })
+
+    it('env 内の ${VAR} 環境変数が置換される', async () => {
+      process.env['WN_TEST_DB_PATH'] = '/tmp/test.db'
+      try {
+        writeConfig(localDir, {
+          mcp: {
+            servers: [
+              {
+                name: 'test-srv',
+                command: 'npx',
+                args: ['server'],
+                env: { DB_PATH: '${WN_TEST_DB_PATH}' },
+              },
+            ],
+          },
+        })
+
+        const result = await loadConfig(globalDir, localDir)
+        expect(result.ok).toBe(true)
+        if (result.ok) {
+          expect(result.data.mcp?.servers[0]?.env?.['DB_PATH']).toBe('/tmp/test.db')
+        }
+      } finally {
+        delete process.env['WN_TEST_DB_PATH']
+      }
+    })
+
+    it('env に文字列でない値がある場合は MCP 設定として認識しない', async () => {
+      writeConfig(localDir, {
+        mcp: {
+          servers: [
+            {
+              name: 'bad-env',
+              command: 'npx',
+              args: ['server'],
+              env: { PORT: 3000 },
+            },
+          ],
+        },
+      })
+
+      const result = await loadConfig(globalDir, localDir)
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        // env が不正なので isMcpServerConfig が false を返し、
+        // isMcpConfig も false になり、mcp が undefined になる
+        expect(result.data.mcp).toBeUndefined()
+      }
+    })
+
+    it('env なしの MCP サーバー設定は引き続き正しく読み込める', async () => {
+      writeConfig(localDir, {
+        mcp: {
+          servers: [
+            { name: 'no-env', command: 'npx', args: ['server'] },
+          ],
+        },
+      })
+
+      const result = await loadConfig(globalDir, localDir)
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data.mcp?.servers).toHaveLength(1)
+        expect(result.data.mcp?.servers[0]?.name).toBe('no-env')
+        expect(result.data.mcp?.servers[0]?.env).toBeUndefined()
+      }
+    })
+  })
+
   // ── デフォルト値 ──────────────────────────────────────────
 
   describe('デフォルト値', () => {

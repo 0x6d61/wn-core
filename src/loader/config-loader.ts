@@ -138,7 +138,12 @@ function isMcpServerConfig(value: unknown): value is McpServerConfig {
   if (typeof value['name'] !== 'string') return false
   if (typeof value['command'] !== 'string') return false
   if (!Array.isArray(value['args'])) return false
-  return value['args'].every((a) => typeof a === 'string')
+  if (!value['args'].every((a) => typeof a === 'string')) return false
+  if ('env' in value && value['env'] !== undefined) {
+    if (!isPlainObject(value['env'])) return false
+    if (!Object.values(value['env']).every((v) => typeof v === 'string')) return false
+  }
+  return true
 }
 
 /**
