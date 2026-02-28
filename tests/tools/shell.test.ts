@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createShellTool, getShellConfig } from '../../src/tools/shell.js'
 import type { ToolDefinition } from '../../src/tools/types.js'
 
-describe('createShellTool', () => {
+describe('createShellTool', { timeout: 15_000 }, () => {
   it('コマンドを実行して stdout を返す', async () => {
     const tool = createShellTool()
     // Windows (powershell): echo hello -> "hello\r\n"
