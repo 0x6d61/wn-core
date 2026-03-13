@@ -78,9 +78,11 @@ vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => {
     StdioClientTransport: class MockStdioClientTransport {
       command: string
       args: string[]
-      constructor(opts: { command: string; args?: string[] }) {
+      env: Record<string, string> | undefined
+      constructor(opts: { command: string; args?: string[]; env?: Record<string, string> }) {
         this.command = opts.command
         this.args = opts.args ?? []
+        this.env = opts.env
       }
     },
   }
@@ -91,8 +93,13 @@ const { createMcpManager } = await import('../../src/mcp/client.js')
 
 // --- ヘルパー ---
 
-function makeServerConfig(name: string, command = 'npx', args: string[] = []): McpServerConfig {
-  return { name, command, args }
+function makeServerConfig(
+  name: string,
+  command = 'npx',
+  args: string[] = [],
+  env?: Record<string, string>,
+): McpServerConfig {
+  return env !== undefined ? { name, command, args, env } : { name, command, args }
 }
 
 function makeMcpConfig(servers: McpServerConfig[]): McpConfig {
@@ -172,8 +179,8 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        expect(result.data).toHaveLength(1)
-        expect(result.data[0]?.serverName).toBe('alpha')
+        expect(result.data.connections).toHaveLength(1)
+        expect(result.data.connections[0]?.serverName).toBe('alpha')
       }
     })
 
@@ -195,8 +202,8 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        expect(result.data).toHaveLength(3)
-        const names = result.data.map((c) => c.serverName)
+        expect(result.data.connections).toHaveLength(3)
+        const names = result.data.connections.map((c) => c.serverName)
         expect(names).toContain('server-a')
         expect(names).toContain('server-b')
         expect(names).toContain('server-c')
@@ -218,7 +225,7 @@ describe('MCP Client', () => {
       }
     })
 
-    it('部分失敗（2サーバー中1つ成功）→ ok + 成功分のみ', async () => {
+    it('部分失敗（2サーバー中1つ成功）→ ok + 成功分 + warnings', async () => {
       const successInst = createMockClientInstance()
       successInst.listTools.mockResolvedValue({ tools: [] })
 
@@ -234,8 +241,10 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        expect(result.data).toHaveLength(1)
-        expect(result.data[0]?.serverName).toBe('good-server')
+        expect(result.data.connections).toHaveLength(1)
+        expect(result.data.connections[0]?.serverName).toBe('good-server')
+        expect(result.data.warnings).toHaveLength(1)
+        expect(result.data.warnings[0]).toContain('bad-server')
       }
     })
 
@@ -265,7 +274,26 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        expect(result.data).toHaveLength(0)
+        expect(result.data.connections).toHaveLength(0)
+        expect(result.data.warnings).toHaveLength(0)
+      }
+    })
+
+    it('env が設定されたサーバーに接続できる', async () => {
+      const inst = createMockClientInstance()
+      inst.listTools.mockResolvedValue({ tools: [] })
+
+      const manager = createMcpManager(
+        makeMcpConfig([
+          makeServerConfig('with-env', 'npx', ['server'], { DB_PATH: 'test.db' }),
+        ]),
+      )
+      const result = await manager.connectAll()
+
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data.connections).toHaveLength(1)
+        expect(result.data.connections[0]?.serverName).toBe('with-env')
       }
     })
   })
@@ -287,7 +315,7 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        const conn = result.data[0]
+        const conn = result.data.connections[0]
         if (!conn) throw new Error('expected connection')
         expect(conn.tools).toHaveLength(1)
 
@@ -313,7 +341,7 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        const tool = result.data[0]?.tools[0]
+        const tool = result.data.connections[0]?.tools[0]
         if (!tool) throw new Error('expected tool')
         expect(tool.name).toBe('nmap__run_scan')
       }
@@ -330,7 +358,7 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        const conn = result.data[0]
+        const conn = result.data.connections[0]
         if (!conn) throw new Error('expected connection')
         expect(conn.tools).toHaveLength(2)
 
@@ -361,7 +389,7 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        const tool = result.data[0]?.tools[0]
+        const tool = result.data.connections[0]?.tools[0]
         if (!tool) throw new Error('expected tool')
         expect(tool.parameters).toStrictEqual(inputSchema)
       }
@@ -378,7 +406,7 @@ describe('MCP Client', () => {
 
       expect(result.ok).toBe(true)
       if (result.ok) {
-        const conn = result.data[0]
+        const conn = result.data.connections[0]
         if (!conn) throw new Error('expected connection')
         expect(conn.tools).toStrictEqual([])
       }
@@ -402,7 +430,7 @@ describe('MCP Client', () => {
       const connectResult = await manager.connectAll()
       if (!connectResult.ok) throw new Error('connectAll failed')
 
-      const tool = connectResult.data[0]?.tools[0]
+      const tool = connectResult.data.connections[0]?.tools[0]
       if (!tool) throw new Error('expected tool')
 
       expect(tool.name).toBe('my-srv__do_thing')
@@ -427,7 +455,7 @@ describe('MCP Client', () => {
       const connectResult = await manager.connectAll()
       if (!connectResult.ok) throw new Error('connectAll failed')
 
-      const tool = connectResult.data[0]?.tools[0]
+      const tool = connectResult.data.connections[0]?.tools[0]
       if (!tool) throw new Error('expected tool')
 
       const execResult = await tool.execute({})
@@ -449,7 +477,7 @@ describe('MCP Client', () => {
       const connectResult = await manager.connectAll()
       if (!connectResult.ok) throw new Error('connectAll failed')
 
-      const tool = connectResult.data[0]?.tools[0]
+      const tool = connectResult.data.connections[0]?.tools[0]
       if (!tool) throw new Error('expected tool')
 
       const execResult = await tool.execute({})
@@ -474,7 +502,7 @@ describe('MCP Client', () => {
       const connectResult = await manager.connectAll()
       if (!connectResult.ok) throw new Error('connectAll failed')
 
-      const tool = connectResult.data[0]?.tools[0]
+      const tool = connectResult.data.connections[0]?.tools[0]
       if (!tool) throw new Error('expected tool')
 
       const execResult = await tool.execute({})
@@ -532,7 +560,7 @@ describe('MCP Client', () => {
       if (!result.ok) throw new Error('connectAll failed')
 
       const registry = new ToolRegistry()
-      for (const conn of result.data) {
+      for (const conn of result.data.connections) {
         for (const tool of conn.tools) {
           const regResult = registry.registerMcp(tool)
           expect(regResult.ok).toBe(true)
@@ -562,7 +590,7 @@ describe('MCP Client', () => {
       registry.register(builtinTool)
 
       // MCP ツールとして同名を登録
-      for (const conn of result.data) {
+      for (const conn of result.data.connections) {
         for (const tool of conn.tools) {
           registry.registerMcp(tool)
         }

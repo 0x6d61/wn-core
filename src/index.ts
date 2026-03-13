@@ -68,7 +68,7 @@ export type {
 } from './loader/types.js'
 
 // MCP
-export type { McpConnection, McpManager } from './mcp/types.js'
+export type { McpConnection, McpManager, ConnectAllResult } from './mcp/types.js'
 export { createMcpManager } from './mcp/client.js'
 
 // RPC types
